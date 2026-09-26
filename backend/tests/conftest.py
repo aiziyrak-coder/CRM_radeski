@@ -23,7 +23,8 @@ def _test_db_url() -> str:
 
 def _test_redis_url() -> str:
     base = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-    return urlunsplit(urlsplit(base)._replace(path="/15"))
+    # TEST_REDIS_DB lets parallel test runs (each with its own DATABASE_URL) not share state
+    return urlunsplit(urlsplit(base)._replace(path=f"/{os.environ.get('TEST_REDIS_DB', '15')}"))
 
 
 os.environ["ENVIRONMENT"] = "test"
