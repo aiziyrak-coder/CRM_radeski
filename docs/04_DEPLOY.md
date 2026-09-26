@@ -11,7 +11,7 @@ Bu hujjat serverning umumiy yo'riqnomasini Radeski CRM uchun aniq qiymatlar bila
 | Compose loyiha nomi | `radeski-crm` (`docker-compose.prod.yml` ichida `name:` bilan qotirilgan) |
 | HTTP port | `127.0.0.1:9250` (bo'sh 9200–9400 oralig'idan). Faqat `web` konteyneri port ochadi |
 | Domen | `crm.radeski.uz` → A yozuvi `87.192.230.208` |
-| Volume'lar | `radeski_crm_pgdata`, `radeski_crm_redisdata` |
+| Volume'lar | `radeski_crm_pgdata`, `radeski_crm_redisdata`, `radeski_crm_recordings` (qo'ng'iroq yozuvlari), `radeski_crm_pbx_sounds` (IVR ovozlari) |
 | Zaxira | Har kuni 04:30 da (02:15, 03:00 va 03:15 boshqa loyihalarniki), 30 kun saqlanadi |
 | Server | 32 yadro, 94 GB RAM (~20 GB bo'sh), 573 GB bo'sh disk, GPU yo'q |
 
@@ -184,6 +184,12 @@ cd /home/radeski-crm && docker compose -f docker-compose.prod.yml up -d --build 
 cd /home/radeski-crm && docker compose -f docker-compose.prod.yml up -d --build --no-deps web
 ```
 
+Telefoniya ulangan bo'lsa (`--profile telephony`), Asterisk konfiguratsiyasi o'zgarganda:
+
+```bash
+cd /home/radeski-crm && docker compose -f docker-compose.prod.yml --profile telephony up -d --build --no-deps pbx
+```
+
 `web` ichidagi nginx `api` manzilini Docker DNS orqali qayta aniqlaydi. Shuning uchun faqat `api` qayta yaratilganda ham 502 chiqmaydi (lokal sinovda tekshirilgan).
 
 ## 6. Oxirgi tekshiruv
@@ -191,16 +197,24 @@ cd /home/radeski-crm && docker compose -f docker-compose.prod.yml up -d --build 
 ```bash
 docker ps -q | wc -l
 ```
-Son 1-qadamdagidan 6 taga ko'p bo'lishi kerak (web, api, worker, beat, db, redis).
+Son 1-qadamdagidan 6 taga ko'p bo'lishi kerak (web, api, worker, beat, db, redis); telefoniya
+yoqilgan bo'lsa 7 ta (+ pbx).
 
 ```bash
 docker ps -a --filter 'status=exited' --format '{{.Names}}\t{{.Status}}'
 ```
 Bu yerda yangi to'xtagan konteyner chiqmasligi kerak.
 
-## 7. Telefoniya (3-bosqich) uchun oldindan bilish kerak bo'lgan narsalar
+## 7. Qo'shimcha modullarni ulash
 
-- Server router ortida turibdi: ichki IP `192.168.0.101`, tashqi IP `87.192.230.208`. Tashqaridan 22-port yopiq, demak router faqat ayrim portlarni o'tkazadi.
-- Uztelecom SIP-trunk va brauzer softfoni uchun routerda **UDP portlarni yo'naltirish** kerak bo'ladi: SIP (5060 yoki boshqa bo'sh port) va RTP oralig'i (masalan, UDP 30000–30200). Asterisk'da tashqi IP (`external_media_address`) ko'rsatiladi.
-- Operator klinikada, server esa ofisda bo'lgani uchun operator ovozi internet orqali o'tadi. WebRTC uchun STUN (va kerak bo'lsa TURN) sozlanadi.
-- Bu portlar TCP emas, UDP. Ular serverdagi mavjud TCP xizmatlarga xalaqit bermaydi, lekin router sozlamasini oldindan rejalashtirish kerak.
+Har biri alohida, kerakli ma'lumot kelganda yoqiladi (bo'sh qolsa CRM ishlayveradi):
+
+| Modul | Nima kerak | Qo'llanma |
+|---|---|---|
+| Telefoniya | Uztelecom SIP login/parol, routerda UDP 5060 va 17000–17039 | `docs/06_TELEFONIYA.md` |
+| AI tahlil | `OPENAI_API_KEY` | `docs/07_AI.md` |
+| Telegram / SMS / Instagram | bot tokeni, SMS shartnomasi, Meta ilovasi | `docs/08_KANALLAR.md` |
+| Sayt arizalari | sayt jamoasi webhook kodini qo'shadi | `docs/05_SAYT_INTEGRATSIYA.md` |
+
+Bosh sahifadagi "Tizim holati" (admin, rahbar, koll-markaz rahbari) qaysi modul ulanganini va
+e'tibor talab qiladigan xatolarni (yuborilmagan xabarlar, tahlil qilinmagan yozuvlar) ko'rsatadi.

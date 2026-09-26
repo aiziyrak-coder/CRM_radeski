@@ -72,7 +72,7 @@ function ResultForm({ task, onDone }: { task: Task; onDone: () => void }) {
   })
   const needsReason = NEEDS_REASON.includes(outcome)
   return (
-    <div className="grid gap-2 rounded-md bg-slate-50 p-3 md:grid-cols-4">
+    <div className="grid grid-cols-1 gap-2 rounded-md bg-slate-50 p-3 md:grid-cols-4">
       <Field label={t('tasks.result')}>
         <Select value={outcome} onChange={(e) => setOutcome(e.target.value as Outcome)}>
           {OUTCOMES_FOR[task.type].map((o) => (
@@ -356,7 +356,7 @@ export default function TasksPage() {
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold">{t('tasks.title')}</h1>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Select value={type} onChange={(e) => setType(e.target.value as TaskType | '')} className="w-56">
               <option value="">{t('tasks.filterAll')}</option>
               {TYPES.map((x) => (

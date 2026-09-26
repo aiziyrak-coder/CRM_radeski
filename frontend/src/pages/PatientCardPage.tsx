@@ -84,7 +84,7 @@ function Details({ patient }: { patient: Patient }) {
       }
       title={t('patients.details')}
     >
-      <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Info label={t('patients.birthDate')} value={formatDate(patient.birth_date)} />
         <Info label={t('patients.gender')} value={t(`genders.${patient.gender}`)} />
         <Info label={t('patients.language')} value={t(`lang.${patient.language}`)} />
@@ -556,7 +556,7 @@ export default function PatientCardPage() {
         <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">{t('patients.legacyNote')}</p>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <Details patient={patient} />
           <Conditions patient={patient} />

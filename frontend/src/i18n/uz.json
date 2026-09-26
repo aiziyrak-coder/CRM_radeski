@@ -96,8 +96,7 @@
   },
   "home": {
     "welcome": "Xush kelibsiz, {{name}}",
-    "role": "Rolingiz: {{role}}",
-    "hint": "Chap menyuda sizga ochiq bo'limlar ko'rsatilgan. \"Tez orada\" belgisi bor bo'limlar keyingi bosqichlarda qo'shiladi."
+    "role": "Rolingiz: {{role}}"
   },
   "soon": {
     "title": "Bu bo'lim tayyorlanmoqda",
@@ -110,7 +109,23 @@
     "ok": "Tizim ishlayapti",
     "down": "Tizim bilan aloqa yo'q",
     "db": "Ma'lumotlar bazasi",
-    "redis": "Navbat (Redis)"
+    "redis": "Navbat (Redis)",
+    "on": "ulangan",
+    "off": "ulanmagan",
+    "telephony": "Telefoniya (Asterisk)",
+    "trunk": "Uztelecom trunk",
+    "ai": "AI (OpenAI)",
+    "lastCall": "oxirgi qo'ng'iroq: {{at}}",
+    "problems": {
+      "recordings_failed_one": "{{count}} ta yozuv MP3 ga aylanmadi (worker loglarini tekshiring)",
+      "recordings_failed_other": "{{count}} ta yozuv MP3 ga aylanmadi (worker loglarini tekshiring)",
+      "analyses_failed_one": "{{count}} ta qo'ng'iroq AI tahlilidan o'tmadi",
+      "analyses_failed_other": "{{count}} ta qo'ng'iroq AI tahlilidan o'tmadi",
+      "messages_failed_one": "{{count}} ta xabar yuborilmadi (Chatlar sahifasida xatosi ko'rinadi)",
+      "messages_failed_other": "{{count}} ta xabar yuborilmadi (Chatlar sahifasida xatosi ko'rinadi)"
+    },
+    "queued_one": "Navbatda {{count}} ta xabar (tungi soatlarda ertalab ketadi)",
+    "queued_other": "Navbatda {{count}} ta xabar (tungi soatlarda ertalab ketadi)"
   },
   "users": {
     "title": "Foydalanuvchilar",
@@ -662,7 +677,10 @@
     "tasks": "Bugungi vazifalar",
     "overdue": "Muddati o'tgan",
     "sla": "Javobsiz murojaatlar",
-    "go": "Navbatga o'tish"
+    "go": "Navbatga o'tish",
+    "missed": "Javobsiz qo'ng'iroqlar (bugun)",
+    "chats": "O'qilmagan chatlar",
+    "redFlags": "Qizil bayroqlar"
   },
   "timeline": {
     "appointment": "Qabul",

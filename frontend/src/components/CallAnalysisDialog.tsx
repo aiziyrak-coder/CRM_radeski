@@ -154,7 +154,7 @@ function Body({ a, canAck }: { a: CallAnalysis; canAck: boolean }) {
       )}
 
       {a.extracted && (
-        <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
+        <dl className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
           {(['interest', 'preferred_time', 'source', 'next_step'] as const).map(
             (k) =>
               a.extracted![k] && (
@@ -167,7 +167,7 @@ function Body({ a, canAck }: { a: CallAnalysis; canAck: boolean }) {
         </dl>
       )}
       {((a.questions?.length ?? 0) > 0 || (a.objections?.length ?? 0) > 0) && (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {(['questions', 'objections'] as const).map(
             (k) =>
               (a[k]?.length ?? 0) > 0 && (

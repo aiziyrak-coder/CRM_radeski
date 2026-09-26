@@ -243,8 +243,12 @@ export default function SchedulePage() {
             {t('schedule.today')}
           </Button>
           <span className="text-sm font-medium">{formatDay(date, i18n.language)}</span>
-          <div className="ml-auto flex gap-2">
-            <Select value={branchId} onChange={(e) => set('branch', e.target.value)} className="w-56">
+          <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
+            <Select
+              value={branchId}
+              onChange={(e) => set('branch', e.target.value)}
+              className="min-w-0 flex-1 sm:w-56 sm:flex-none"
+            >
               {branches
                 .filter((b) => b.is_active)
                 .map((b) => (

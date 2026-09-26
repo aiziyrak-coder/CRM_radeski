@@ -41,7 +41,7 @@ function Overview({ from, to, userId }: { from: string; to: string; userId: stri
   if (!data) return null
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label={t('ai.analysed')} value={data.analysed} />
         <Stat label={t('ai.avgScore')} value={data.avg_score} />
         <Stat label={t('ai.redFlagsOpen')} value={data.red_flags_open} />
@@ -50,7 +50,7 @@ function Overview({ from, to, userId }: { from: string; to: string; userId: stri
           value={`${data.reviews.corrected ?? 0} / ${(data.reviews.corrected ?? 0) + (data.reviews.confirmed ?? 0)}`}
         />
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title={t('ai.byOperator')}>
           <table className="w-full text-left text-sm">
             <thead className="text-xs text-slate-500 uppercase">
@@ -179,7 +179,7 @@ function CriterionRow({ c, canEdit }: { c: QaCriterion; canEdit: boolean }) {
   })
   return (
     <li className="space-y-2 py-3">
-      <div className="grid gap-2 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
         <Input
           value={form.name_uz}
           disabled={!canEdit}

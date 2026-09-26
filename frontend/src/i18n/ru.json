@@ -96,8 +96,7 @@
   },
   "home": {
     "welcome": "Добро пожаловать, {{name}}",
-    "role": "Ваша роль: {{role}}",
-    "hint": "В меню слева показаны доступные вам разделы. Разделы с пометкой «Скоро» появятся на следующих этапах."
+    "role": "Ваша роль: {{role}}"
   },
   "soon": {
     "title": "Раздел в разработке",
@@ -110,7 +109,31 @@
     "ok": "Система работает",
     "down": "Нет связи с системой",
     "db": "База данных",
-    "redis": "Очередь (Redis)"
+    "redis": "Очередь (Redis)",
+    "on": "подключено",
+    "off": "не подключено",
+    "telephony": "Телефония (Asterisk)",
+    "trunk": "Транк Uztelecom",
+    "ai": "AI (OpenAI)",
+    "lastCall": "последний звонок: {{at}}",
+    "problems": {
+      "recordings_failed_one": "{{count}} запись не сконвертирована в MP3 (проверьте логи worker)",
+      "recordings_failed_few": "{{count}} записи не сконвертированы в MP3",
+      "recordings_failed_many": "{{count}} записей не сконвертировано в MP3",
+      "recordings_failed_other": "{{count}} записей не сконвертировано в MP3",
+      "analyses_failed_one": "{{count}} звонок не прошёл AI-анализ",
+      "analyses_failed_few": "{{count}} звонка не прошли AI-анализ",
+      "analyses_failed_many": "{{count}} звонков не прошли AI-анализ",
+      "analyses_failed_other": "{{count}} звонков не прошли AI-анализ",
+      "messages_failed_one": "{{count}} сообщение не отправлено (ошибка видна в Чатах)",
+      "messages_failed_few": "{{count}} сообщения не отправлены",
+      "messages_failed_many": "{{count}} сообщений не отправлено",
+      "messages_failed_other": "{{count}} сообщений не отправлено"
+    },
+    "queued_one": "В очереди {{count}} сообщение (ночью уйдут утром)",
+    "queued_few": "В очереди {{count}} сообщения",
+    "queued_many": "В очереди {{count}} сообщений",
+    "queued_other": "В очереди {{count}} сообщений"
   },
   "users": {
     "title": "Пользователи",
@@ -664,7 +687,10 @@
     "tasks": "Задачи на сегодня",
     "overdue": "Просрочено",
     "sla": "Обращения без ответа",
-    "go": "Перейти к очереди"
+    "go": "Перейти к очереди",
+    "missed": "Пропущенные звонки (сегодня)",
+    "chats": "Непрочитанные чаты",
+    "redFlags": "Красные флаги"
   },
   "timeline": {
     "appointment": "Приём",

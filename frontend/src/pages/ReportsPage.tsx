@@ -25,7 +25,7 @@ function CallStatsRow({ data }: { data: CallStats }) {
     return <p className="text-sm text-slate-500">{t('reports.telephonyNote')}</p>
   }
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <Stat
         label={t('reports.inbound')}
         value={data.inbound_calls}
@@ -94,7 +94,7 @@ function Daily() {
       {data && (
         <>
           <CallStatsRow data={data} />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label={t('reports.outbound')} value={data.outbound_attempts} />
             <Stat label={t('reports.dialRate')} value={pct(data.dial_rate)} />
             <Stat label={t('reports.newLeads')} value={data.new_leads} />
@@ -105,7 +105,7 @@ function Daily() {
             <Stat label={t('reports.cancellations')} value={data.cancellations} />
             <Stat label={t('reports.reschedules')} value={data.reschedules} />
           </div>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Card title={t('reports.reasons')}>
               <ul className="space-y-1 text-sm">
                 {Object.entries(data.reasons).length === 0 && <li className="text-slate-500">—</li>}
@@ -171,7 +171,7 @@ function KpiView() {
       {data && (
         <>
           <CallStatsRow data={data} />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label={t('reports.leadsTotal')} value={data.leads_total} />
             <Stat label={t('reports.leadToBooking')} value={pct(data.lead_to_booking)} />
             <Stat

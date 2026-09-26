@@ -49,7 +49,7 @@ function NewLead({ onClose }: { onClose: () => void }) {
   }
   return (
     <Card title={t('leads.new')}>
-      <form onSubmit={submit} className="grid gap-3 md:grid-cols-3">
+      <form onSubmit={submit} className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <Field label={t('leads.phone')}>
           <Input
             type="tel"

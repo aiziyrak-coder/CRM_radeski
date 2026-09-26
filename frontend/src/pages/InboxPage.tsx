@@ -335,7 +335,7 @@ export default function InboxPage() {
           <Badge tone={status.sms ? 'good' : 'neutral'}>SMS{status.sms ? ` (${status.sms})` : ''}</Badge>
         </div>
       )}
-      <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[22rem_1fr]">
         <ConversationList selected={selected} onSelect={(id) => setParams({ c: id })} />
         {selected ? (
           <Thread key={selected} id={selected} />

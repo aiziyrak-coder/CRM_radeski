@@ -6,7 +6,7 @@ from fastapi import FastAPI
 import app.modules.ai.rules  # noqa: F401  - operator review of AI suggestions
 import app.modules.messaging.rules  # noqa: F401  - booking confirmations, reminders
 import app.modules.tasks.rules  # noqa: F401  - registers the task rules on domain events
-from app.api import health
+from app.api import health, status
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.modules.ai.router import router as ai_router
@@ -48,6 +48,7 @@ app = FastAPI(
 
 for router in (
     health.router,
+    status.router,
     auth_router,
     users_router,
     audit_router,

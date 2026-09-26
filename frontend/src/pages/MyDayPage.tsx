@@ -34,7 +34,7 @@ function RecommendationForm({ a }: { a: Appointment }) {
   })
   if (save.isSuccess) return <Notice>{t('myday.saved')}</Notice>
   return (
-    <div className="grid gap-2 rounded-md bg-slate-50 p-3 sm:grid-cols-[auto_1fr_auto]">
+    <div className="grid grid-cols-1 gap-2 rounded-md bg-slate-50 p-3 sm:grid-cols-[auto_1fr_auto]">
       <Field label={t('myday.in')}>
         <div className="flex gap-1">
           <Input

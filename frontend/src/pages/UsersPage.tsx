@@ -29,7 +29,7 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-4 md:grid-cols-2">
+    <form onSubmit={submit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <Field label={t('users.fullName')}>
         <Input
           value={draft.full_name}
@@ -257,22 +257,24 @@ export default function UsersPage() {
       <Card>
         <ErrorText error={error} />
         {isPending ? null : (
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs text-slate-500 uppercase">
-              <tr>
-                <th className="pb-2 font-medium">{t('users.fullName')}</th>
-                <th className="pb-2 font-medium">{t('users.role')}</th>
-                <th className="pb-2 font-medium">{t('users.status')}</th>
-                <th className="pb-2 font-medium">{t('users.lastLogin')}</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {users?.map((u) => (
-                <UserRow key={u.id} user={u} isSelf={u.id === me?.id} extensions={extensions} />
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[680px] text-left text-sm">
+              <thead className="text-xs text-slate-500 uppercase">
+                <tr>
+                  <th className="pb-2 font-medium">{t('users.fullName')}</th>
+                  <th className="pb-2 font-medium">{t('users.role')}</th>
+                  <th className="pb-2 font-medium">{t('users.status')}</th>
+                  <th className="pb-2 font-medium">{t('users.lastLogin')}</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {users?.map((u) => (
+                  <UserRow key={u.id} user={u} isSelf={u.id === me?.id} extensions={extensions} />
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>

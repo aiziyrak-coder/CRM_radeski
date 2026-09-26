@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     pbx_api_secret: str = ""
     pbx_sip_secret: str = ""
     pbx_extensions: str = "101 102 103 104"
+    sip_host: str = ""  # read here only to show whether the trunk is configured
     recordings_dir: str = "/recordings"
 
     # Messaging (phase 5). Public address of the CRM, used for webhooks and SMS status callbacks

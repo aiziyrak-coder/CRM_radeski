@@ -16,7 +16,7 @@ function Editor({ script }: { script: Script }) {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['scripts'] }),
   })
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <div className="space-y-3">
         <Field label={t('settings.name')}>
           <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={255} />
@@ -50,7 +50,7 @@ export default function ScriptsEditor() {
   const [code, setCode] = useState('')
   const current = list.find((s) => s.code === code) ?? list[0]
   return (
-    <div className="grid gap-6 lg:grid-cols-[16rem_1fr]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[16rem_1fr]">
       <div>
         <div className="mb-2 flex gap-1">
           {(['uz', 'ru'] as const).map((l) => (

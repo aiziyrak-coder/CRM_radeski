@@ -117,7 +117,7 @@ function NewCampaign({ onClose }: { onClose: () => void }) {
             label={(v) => v}
           />
         </Field>
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <Field label={t('campaigns.lastVisit')}>
             <Input
               type="number"

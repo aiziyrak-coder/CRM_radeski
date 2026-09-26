@@ -154,7 +154,7 @@ export default function BookingDialog({
           </>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label={t('schedule.branch')}>
             <Select value={effectiveBranch} onChange={(e) => setBranch(e.target.value)}>
               {branches
@@ -226,7 +226,7 @@ export default function BookingDialog({
             {slots.data && slots.data.length > 0 && (
               <div>
                 <p className="mb-2 text-sm text-slate-600">{t('booking.chooseSlot')}</p>
-                <div className="grid gap-2 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   {slots.data.map((s) => (
                     <button
                       key={`${s.starts_at}-${s.doctor_id}`}
@@ -261,7 +261,7 @@ export default function BookingDialog({
         )}
 
         {!reschedule && (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label={t('booking.source')}>
               <Select value={source} onChange={(e) => setSource(e.target.value as Source | '')}>
                 <option value="">—</option>

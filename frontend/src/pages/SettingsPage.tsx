@@ -180,7 +180,7 @@ function DoctorEditor({ doctor, isAdmin }: { doctor: Doctor; isAdmin: boolean })
       </div>
 
       {isAdmin && (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Field label={t('settings.specialties')}>
             <div className="space-y-1">
               {SPECIALTIES.map((s) => (
@@ -295,7 +295,7 @@ function DoctorsTab({ isAdmin }: { isAdmin: boolean }) {
   const [selected, setSelected] = useState<string>('')
   const doctor = doctors.find((d) => d.id === selected)
   return (
-    <div className="grid gap-6 lg:grid-cols-[16rem_1fr]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[16rem_1fr]">
       <ul className="space-y-1">
         {doctors.map((d) => (
           <li key={d.id}>
@@ -396,7 +396,7 @@ function ResourcesTab() {
           ))}
         </tbody>
       </table>
-      <div className="grid gap-2 md:grid-cols-5">
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
         <Input
           placeholder={t('settings.name')}
           value={draft.name}
@@ -476,7 +476,7 @@ function ServiceRow({ s }: { s: ServiceItem }) {
       {editing && (
         <tr>
           <td colSpan={6} className="pb-3">
-            <div className="grid gap-3 rounded-md bg-slate-50 p-3 md:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 rounded-md bg-slate-50 p-3 md:grid-cols-4">
               <Field label={t('settings.durationMin')}>
                 <Input
                   type="number"
@@ -653,7 +653,7 @@ export default function SettingsPage() {
       </div>
       {sync.isSuccess && <Notice>{t('settings.synced')}</Notice>}
       <ErrorText error={sync.error} />
-      <div className="flex gap-1 border-b border-slate-200">
+      <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200 whitespace-nowrap">
         {tabs.map((k) => (
           <button
             key={k}

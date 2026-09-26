@@ -54,7 +54,7 @@ export default function PatientForm({ initial, withPhone, busy, error, onSubmit,
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-4 md:grid-cols-2">
+    <form onSubmit={submit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <Field label={t('patients.name')}>
         <Input
           value={form.full_name}

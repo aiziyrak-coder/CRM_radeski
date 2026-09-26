@@ -69,32 +69,34 @@ export default function AuditPage() {
         }
       >
         <ErrorText error={error} />
-        <table className="w-full text-left text-sm">
-          <thead className="text-xs text-slate-500 uppercase">
-            <tr>
-              <th className="pb-2 font-medium">{t('audit.time')}</th>
-              <th className="pb-2 font-medium">{t('audit.user')}</th>
-              <th className="pb-2 font-medium">{t('audit.action')}</th>
-              <th className="pb-2 font-medium">{t('audit.details')}</th>
-              <th className="pb-2 font-medium">IP</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data?.items.map((item) => (
-              <tr key={item.id} className="border-t border-slate-100 align-top">
-                <td className="py-2 pr-4 whitespace-nowrap text-slate-600">
-                  {formatDateTime(item.created_at)}
-                </td>
-                <td className="py-2 pr-4">{item.user_name ?? t('audit.system')}</td>
-                <td className="py-2 pr-4">
-                  {t(`audit.actions.${item.action}`, { defaultValue: item.action })}
-                </td>
-                <td className="py-2 pr-4 text-slate-600">{describeChange(item)}</td>
-                <td className="py-2 text-xs text-slate-500">{item.ip}</td>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead className="text-xs text-slate-500 uppercase">
+              <tr>
+                <th className="pb-2 font-medium">{t('audit.time')}</th>
+                <th className="pb-2 font-medium">{t('audit.user')}</th>
+                <th className="pb-2 font-medium">{t('audit.action')}</th>
+                <th className="pb-2 font-medium">{t('audit.details')}</th>
+                <th className="pb-2 font-medium">IP</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {data?.items.map((item) => (
+                <tr key={item.id} className="border-t border-slate-100 align-top">
+                  <td className="py-2 pr-4 whitespace-nowrap text-slate-600">
+                    {formatDateTime(item.created_at)}
+                  </td>
+                  <td className="py-2 pr-4">{item.user_name ?? t('audit.system')}</td>
+                  <td className="py-2 pr-4">
+                    {t(`audit.actions.${item.action}`, { defaultValue: item.action })}
+                  </td>
+                  <td className="py-2 pr-4 text-slate-600">{describeChange(item)}</td>
+                  <td className="py-2 text-xs text-slate-500">{item.ip}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   )
