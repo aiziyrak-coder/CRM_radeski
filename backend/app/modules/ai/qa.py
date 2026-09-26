@@ -14,6 +14,7 @@ from app.core import clinic_time
 from app.integrations import openai_client
 from app.integrations.llm import LlmError, get_llm
 from app.modules.ai.models import AiDigest, AnalysisStatus, CallAnalysis, QaCriterion
+from app.modules.ai.prompts import mask_pii
 from app.modules.ai.service import active_criteria
 from app.modules.patients.models import Patient, PatientCondition
 from app.modules.scheduling.models import Appointment
@@ -223,7 +224,7 @@ async def patient_facts(session: AsyncSession, patient: Patient) -> list[str]:
 
 async def brief(session: AsyncSession, patient: Patient, language: str) -> dict[str, Any]:
     facts = await patient_facts(session, patient)
-    if not openai_client.enabled():
+    if not await openai_client.available():
         return {"text": "\n".join(facts), "ai": False}
     lang = "Russian" if language == "ru" else "Uzbek (Latin)"
     llm = get_llm()
@@ -235,7 +236,7 @@ async def brief(session: AsyncSession, patient: Patient, language: str) -> dict[
                 "what is open or promised, and what to be careful about. No medical advice, no "
                 f"invented facts. Language: {lang}."
             ),
-            user="\n".join(facts),
+            user="\n".join(mask_pii(f) for f in facts),  # notes may hold phone numbers
             schema=BriefOut,
             cache_key="patient-brief-v1",
         )
@@ -296,7 +297,7 @@ async def make_digest(session: AsyncSession, date_to: date | None = None) -> AiD
     date_from = date_to - timedelta(days=6)
     stats = await digest_stats(session, date_from, date_to)
     content, model = None, None
-    if openai_client.enabled() and stats["calls_analysed"]:
+    if stats["calls_analysed"] and await openai_client.available():
         llm = get_llm()
         try:
             out = await llm.parse(

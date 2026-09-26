@@ -12,6 +12,13 @@ from app.integrations.llm import LlmError, openai_llm
 from app.integrations.stt import openai_stt
 
 
+@pytest.fixture(autouse=True)
+def _ai_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "openai_api_key", "sk-test")
+
+
 def fake_client(handler) -> AsyncOpenAI:
     return AsyncOpenAI(
         api_key="sk-test",
@@ -161,3 +168,47 @@ def test_our_schemas_are_valid_strict_schemas(schema: str) -> None:
                 check(value)
 
     check(result)
+
+
+async def test_llm_uses_flex_falls_back_and_counts_spend(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.integrations import openai_client
+
+    tiers: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        tier = json.loads(request.content).get("service_tier")
+        tiers.append(tier)
+        if tier == "flex":
+            return httpx.Response(429, json={"error": {"message": "Resource unavailable"}})
+        body = response_json('{"summary": "ok", "score": 1}')
+        body["usage"] = {
+            "input_tokens": 1_000_000, "output_tokens": 100_000, "total_tokens": 1_100_000,
+            "input_tokens_details": {"cached_tokens": 0},
+            "output_tokens_details": {"reasoning_tokens": 0},
+        }  # fmt: skip
+        return httpx.Response(200, json=body)
+
+    monkeypatch.setattr(openai_llm, "client", lambda: fake_client(handler))
+    llm = openai_llm.OpenAILlm(model="gpt-5.6-luna")
+    llm.tier = "flex"
+    await llm.parse(system="s", user="u", schema=Answer, cache_key="k")
+
+    assert tiers == ["flex", None]  # no flex capacity -> standard tier once
+    # 1M input * $0.20 + 0.1M output * $1.20 at the standard rate
+    assert round(await openai_client.spent_today(), 4) == 0.32
+
+
+def test_cost_estimates() -> None:
+    from types import SimpleNamespace
+
+    from app.integrations.openai_client import llm_cost, stt_cost
+
+    usage = SimpleNamespace(
+        input_tokens=2000,
+        input_tokens_details=SimpleNamespace(cached_tokens=1000),
+        output_tokens=1000,
+    )
+    # (1000 * 0.20 + 1000 * 0.02 + 1000 * 1.20) / 1e6, halved at flex
+    assert llm_cost("gpt-5.6-luna-2026-05-01", usage, "flex") == pytest.approx(0.00071)
+    assert llm_cost("unknown-model", usage, None) > llm_cost("gpt-5.6-luna", usage, None)
+    assert stt_cost("gpt-4o-mini-transcribe", 120) == pytest.approx(0.006)

@@ -182,10 +182,12 @@ async def approve(
 
 @router.post("/ai-suggest")
 async def ai_suggest(session: SessionDep, _: Approver) -> dict[str, int]:
-    from app.integrations.openai_client import enabled
+    from app.integrations.openai_client import available, enabled
 
     if not enabled():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="ai_disabled")
+    if not await available():
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="ai_budget_exceeded")
     counts = await service.suggest_with_ai(session)
     await session.commit()
     return dict(counts)

@@ -180,6 +180,7 @@ async def suggest_with_ai(session: AsyncSession, limit: int = 400) -> Counter[st
     """Pending mappings get an AI category proposal (status SUGGESTED, method AI); nothing is
     applied to patients until a doctor approves it."""
     from app.integrations.llm import LlmError, get_llm
+    from app.modules.ai.prompts import mask_pii
 
     counts: Counter[str] = Counter()
     pending = list(
@@ -197,7 +198,7 @@ async def suggest_with_ai(session: AsyncSession, limit: int = 400) -> Counter[st
         try:
             out = await llm.parse(
                 system=system,
-                user="\n".join(f"{i}. {m.text}" for i, m in enumerate(chunk, 1)),
+                user="\n".join(f"{i}. {mask_pii(m.text)}" for i, m in enumerate(chunk, 1)),
                 schema=_AiBatch,
                 cache_key="diagnosis-categories-v1",
             )

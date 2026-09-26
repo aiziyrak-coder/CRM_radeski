@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from app.modules.tasks.models import REASONS, Outcome
 
-PROMPT_VERSION = "2026-09-v1"
+PROMPT_VERSION = "2026-09-v2"
 
 RED_FLAGS = {
     "diagnosis": "the operator named a diagnosis or recommended a treatment/medicine "
@@ -50,7 +50,7 @@ DEFAULT_CRITERIA = [
 class CriterionResult(BaseModel):
     code: str
     passed: bool | None = Field(description="null when the criterion doesn't apply to this call")
-    comment: str = Field(description="one short sentence, in Uzbek")
+    comment: str = Field(description="empty when passed; otherwise one short sentence, Uzbek")
 
 
 class Violation(BaseModel):
@@ -101,8 +101,11 @@ OUTCOME_HELP = {
 }
 
 
-def system_prompt(criteria: list[tuple[str, str, str]], scripts: list[tuple[str, str, str]]) -> str:
-    """criteria: (code, name, description); scripts: (code, title, body)."""
+def system_prompt(
+    criteria: list[tuple[str, str, str]], scripts: list[tuple[str, str, str | None]]
+) -> str:
+    """criteria: (code, name, description); scripts: (code, title, body or None). Keep it short:
+    every token here is paid for on every analysed call."""
     lines = [
         "You are the quality-control analyst of Radeski Skin Clinic's call center "
         "(dermatology, trichology, cosmetology, laser; Fergana and Kokand, Uzbekistan).",
@@ -132,21 +135,33 @@ def system_prompt(criteria: list[tuple[str, str, str]], scripts: list[tuple[str,
         "",
         "Refusal / cancellation reasons (`reason`): " + ", ".join(REASONS) + ".",
         "",
-        "The clinic's call scripts (`conversation_type` is one of these codes):",
+        "Call script codes (`conversation_type` is one of them):",
+        *(f"- {code}: {title}" for code, title, _ in scripts),
+        "",
+        "Scripts this call is expected to follow:",
     ]
     for code, title, body in scripts:
-        lines += ["", f"### {code} — {title}", body.strip()]
+        if body:
+            lines += ["", f"### {code} — {title}", body.strip()]
     return "\n".join(lines)
 
 
-# phone / document numbers never go to the LLM (TZ: data protection)
-_DIGITS = re.compile(r"(?:\+?\d[\d\s\-()]{5,}\d)")
+# phone / document numbers never go to the LLM (TZ: data protection). Digit groups may be split
+# by spaces, dashes, brackets, dots or commas (speech recognition writes "90, 123, 45, 67"), but a
+# clock time ("10:30") never joins a number.
+_DIGITS = re.compile(r"\+?\d(?:(?:[\s\-()]|[.,]\s?)*(?!\d{1,2}:\d{2})\d)+")
+
+
+def _mask(m: re.Match) -> str:
+    digits = "".join(c for c in m.group() if c.isdigit())
+    # 7-8 digits ending in 000 are prices ("1 500 000 so'm"), which the analysis needs
+    if len(digits) >= 9 or (len(digits) >= 7 and not digits.endswith("000")):
+        return "[raqam]" + (m.group()[-1] if not m.group()[-1].isdigit() else "")
+    return m.group()
 
 
 def mask_pii(text: str) -> str:
-    return _DIGITS.sub(
-        lambda m: "[raqam]" if sum(c.isdigit() for c in m.group()) >= 7 else m.group(), text
-    )
+    return _DIGITS.sub(_mask, text)
 
 
 def user_prompt(context: list[str], transcript: list[dict]) -> str:

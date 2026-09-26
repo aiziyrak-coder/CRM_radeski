@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import subprocess
 import tempfile
 import uuid
@@ -10,13 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.events import emit
 from app.integrations import openai_client
 from app.integrations.llm import LlmError, get_llm
-from app.integrations.stt import get_transcriber
+from app.integrations.stt import Segment, get_transcriber
 from app.modules.ai.models import AnalysisStatus, CallAnalysis, QaCriterion, ReviewStatus
 from app.modules.ai.prompts import (
     DEFAULT_CRITERIA,
@@ -34,6 +36,7 @@ from app.modules.telephony.models import Call, CallDirection, RecordingStatus
 
 log = logging.getLogger(__name__)
 MAX_ATTEMPTS = 3
+STUCK_AFTER = timedelta(minutes=30)  # an in-progress analysis older than this was interrupted
 
 
 # --- criteria ---------------------------------------------------------------------------------
@@ -75,33 +78,124 @@ def score(results: list[dict[str, Any]], weights: dict[str, int]) -> int | None:
 # --- pipeline ---------------------------------------------------------------------------------
 
 
-def split_channels(stereo: Path, workdir: Path) -> tuple[Path, Path]:
-    """Left = operator, right = patient (see telephony.convert_recording)."""
-    operator, patient = workdir / "operator.mp3", workdir / "patient.mp3"
-    subprocess.run(
-        [
-            "ffmpeg", "-y", "-loglevel", "error", "-i", str(stereo),
-            "-filter_complex", "[0:a]channelsplit=channel_layout=stereo[l][r]",
-            "-map", "[l]", "-c:a", "libmp3lame", "-b:a", "24k", str(operator),
-            "-map", "[r]", "-c:a", "libmp3lame", "-b:a", "24k", str(patient),
-        ],
-        check=True, capture_output=True, timeout=300,
+# speech detection: quieter than this for longer than SILENCE_MIN seconds counts as a pause
+SILENCE_DB = -35
+SILENCE_MIN = 0.6
+MERGE_GAP = 1.2  # pauses shorter than this stay inside one STT chunk
+MAX_CHUNK = 30.0  # seconds; keeps timestamps useful for "listen to this moment"
+MIN_SPEECH = 0.4  # coughs and clicks aren't worth a request
+PAD = 0.3
+STT_CONCURRENCY = 4
+
+Chunk = tuple[float, float, Path]  # start, end (seconds in the original call), audio file
+_SILENCE = re.compile(r"silence_(start|end): (-?[\d.]+)")
+_DURATION = re.compile(r"Duration: (\d+):(\d+):([\d.]+)")
+
+
+def _ffmpeg(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["ffmpeg", "-y", "-hide_banner", *args],
+        check=True, capture_output=True, text=True, timeout=300,
     )  # fmt: skip
-    return operator, patient
+
+
+def speech_intervals(stderr: str) -> list[tuple[float, float]]:
+    """Speech = everything silencedetect didn't mark as silence (ffmpeg log -> intervals)."""
+    if not (m := _DURATION.search(stderr)):
+        return []
+    duration = int(m[1]) * 3600 + int(m[2]) * 60 + float(m[3])
+    speech: list[tuple[float, float]] = []
+    cursor: float | None = 0.0  # where the current stretch of speech began; None while silent
+    for kind, value in _SILENCE.findall(stderr):
+        t = max(0.0, min(float(value), duration))
+        if kind == "start":
+            if cursor is not None:
+                speech.append((cursor, t))
+            cursor = None
+        else:
+            cursor = t
+    if cursor is not None:
+        speech.append((cursor, duration))
+    return [(a, b) for a, b in speech if b - a >= MIN_SPEECH]
+
+
+def plan_chunks(speech: list[tuple[float, float]], duration: float) -> list[tuple[float, float]]:
+    """Group speech into STT chunks: close pauses are kept, long silences are cut out."""
+    chunks: list[list[float]] = []
+    for a, b in speech:
+        a, b = max(0.0, a - PAD), min(duration or b + PAD, b + PAD)
+        if chunks and a - chunks[-1][1] < MERGE_GAP and b - chunks[-1][0] <= MAX_CHUNK:
+            chunks[-1][1] = b
+            continue
+        while b - a > MAX_CHUNK:  # one long monologue: split it evenly
+            chunks.append([a, a + MAX_CHUNK])
+            a += MAX_CHUNK
+        chunks.append([a, b])
+    return [(round(a, 2), round(b, 2)) for a, b in chunks]
+
+
+def split_channels(stereo: Path, workdir: Path) -> dict[str, list[Chunk]]:
+    """Left = operator, right = patient (see telephony.convert_recording). Only the parts with
+    speech are sent to STT: each side is silent while the other talks, so this roughly halves the
+    audio minutes that are paid for."""
+    out: dict[str, list[Chunk]] = {}
+    for ch, pan in (("operator", "c0"), ("patient", "c1")):
+        mono = workdir / f"{ch}.wav"
+        _ffmpeg(
+            "-loglevel",
+            "error",
+            "-i",
+            str(stereo),
+            "-af",
+            f"pan=mono|c0={pan}",
+            "-ar",
+            "16000",
+            str(mono),
+        )
+        probe = _ffmpeg(
+            "-i", str(mono), "-af", f"silencedetect=noise={SILENCE_DB}dB:d={SILENCE_MIN}",
+            "-f", "null", "-",
+        )  # fmt: skip
+        dur = _DURATION.search(probe.stderr)
+        duration = int(dur[1]) * 3600 + int(dur[2]) * 60 + float(dur[3]) if dur else 0.0
+        out[ch] = []
+        for i, (a, b) in enumerate(plan_chunks(speech_intervals(probe.stderr), duration)):
+            piece = workdir / f"{ch}-{i:03d}.mp3"
+            _ffmpeg(
+                "-loglevel", "error", "-ss", f"{a}", "-to", f"{b}", "-i", str(mono),
+                "-c:a", "libmp3lame", "-b:a", "32k", str(piece),
+            )  # fmt: skip
+            out[ch].append((a, b, piece))
+    return out
 
 
 async def transcribe_call(path: Path) -> tuple[str, list[dict[str, Any]]]:
     stt = get_transcriber()
+    limit = asyncio.Semaphore(STT_CONCURRENCY)
+
+    async def one(ch: str, start: float, end: float, audio: Path) -> list[dict[str, Any]]:
+        async with limit:
+            segments = await stt.transcribe(audio)
+        if len(segments) == 1 and segments[0].start == 0:  # plain-text models: the whole chunk
+            segments = [Segment(0.0, end - start, segments[0].text)]
+        return [
+            {
+                "ch": ch,
+                "start": round(start + s.start, 1),
+                "end": round(start + s.end, 1),
+                "text": s.text,
+            }
+            for s in segments
+        ]
+
     with tempfile.TemporaryDirectory() as tmp:
-        operator, patient = await asyncio.to_thread(split_channels, path, Path(tmp))
-        op_segments, pt_segments = await asyncio.gather(
-            stt.transcribe(operator), stt.transcribe(patient)
+        chunks = await asyncio.to_thread(split_channels, path, Path(tmp))
+        parts = await asyncio.gather(
+            *(one(ch, a, b, f) for ch, items in chunks.items() for a, b, f in items)
         )
-    merged = [
-        {"ch": ch, "start": round(s.start, 1), "end": round(s.end, 1), "text": s.text}
-        for ch, segments in (("operator", op_segments), ("patient", pt_segments))
-        for s in segments
-    ]
+    seconds = sum(b - a for items in chunks.values() for a, b, _ in items)
+    await openai_client.add_spend(openai_client.stt_cost(stt.name, seconds))
+    merged = [s for part in parts for s in part]
     merged.sort(key=lambda s: (s["start"], s["ch"] != "operator"))
     return stt.name, merged
 
@@ -122,11 +216,20 @@ async def _context(session: AsyncSession, call: Call) -> list[str]:
     return lines
 
 
-async def _scripts(session: AsyncSession) -> list[tuple[str, str, str]]:
+async def _scripts(session: AsyncSession, call: Call) -> list[tuple[str, str, str | None]]:
+    """All script titles, but the full text only of the scripts this call should follow (the
+    task's script, or the inbound one, plus the closing): most of the prompt was scripts, and
+    input tokens are what an analysis costs."""
+    focus = {"closing"}
+    task = await session.get(Task, call.task_id) if call.task_id else None
+    if task and task.script_code:
+        focus.add(task.script_code)
+    if call.direction is CallDirection.IN or not (task and task.script_code):
+        focus.add("incoming")
     rows = await session.scalars(
         select(Script).where(Script.language == "uz").order_by(Script.sort_order, Script.code)
     )
-    return [(s.code, s.title, s.body) for s in rows]
+    return [(s.code, s.title, s.body if s.code in focus else None) for s in rows]
 
 
 def _clean(out: AnalysisOut, criteria: list[QaCriterion], script_codes: set[str]) -> dict:
@@ -161,30 +264,59 @@ def _clean(out: AnalysisOut, criteria: list[QaCriterion], script_codes: set[str]
     }
 
 
+async def _claim(session: AsyncSession, call: Call) -> CallAnalysis | None:
+    """Lock the call's analysis row so two workers never pay OpenAI for the same call."""
+    await session.execute(
+        pg_insert(CallAnalysis)
+        .values(id=uuid.uuid4(), call_id=call.id, status=AnalysisStatus.PENDING, attempts=0)
+        .on_conflict_do_nothing(index_elements=[CallAnalysis.call_id])
+    )
+    return await session.scalar(
+        select(CallAnalysis)
+        .where(CallAnalysis.call_id == call.id)
+        .with_for_update(skip_locked=True)
+        .execution_options(populate_existing=True)
+    )
+
+
 async def analyze_call(session: AsyncSession, call_id: uuid.UUID) -> AnalysisStatus | None:
-    """Idempotent: a call that's already analysed (or skipped) is left alone."""
+    """Idempotent: a call that's already analysed (or skipped, or being analysed by another
+    worker) is left alone. The claim is committed before anything is sent to OpenAI."""
     if not openai_client.enabled():
         return None
     call = await session.get(Call, call_id)
     if call is None or call.recording_status is not RecordingStatus.READY or not call.recording:
         return None
-    analysis = await session.scalar(select(CallAnalysis).where(CallAnalysis.call_id == call.id))
-    if analysis is None:
-        analysis = CallAnalysis(call_id=call.id, status=AnalysisStatus.PENDING, attempts=0)
-        session.add(analysis)
+    analysis = await _claim(session, call)
+    if analysis is None:  # another worker holds it right now
+        return None
     if analysis.status in (AnalysisStatus.READY, AnalysisStatus.SKIPPED):
+        return analysis.status
+    busy = (AnalysisStatus.TRANSCRIBING, AnalysisStatus.ANALYZING)
+    if analysis.status in busy and analysis.updated_at > datetime.now(UTC) - STUCK_AFTER:
         return analysis.status
     settings = get_settings()
     if (call.talk_seconds or 0) < settings.ai_min_talk_seconds:
         analysis.status, analysis.error = AnalysisStatus.SKIPPED, "too_short"
         await session.flush()
         return analysis.status
+    if analysis.attempts >= MAX_ATTEMPTS:
+        return analysis.status
+    try:
+        await openai_client.ensure_budget()
+    except openai_client.AiDisabledError as exc:  # today's budget is used up: try again tomorrow
+        analysis.status, analysis.error = AnalysisStatus.PENDING, str(exc)
+        await session.commit()
+        return analysis.status
 
     analysis.attempts += 1
+    analysis.status = (
+        AnalysisStatus.ANALYZING if analysis.transcript else AnalysisStatus.TRANSCRIBING
+    )
+    await session.commit()  # the claim: other workers now see it as in progress
     analysis.error = None
     try:
         if not analysis.transcript:
-            analysis.status = AnalysisStatus.TRANSCRIBING
             path = telephony.recordings_dir() / call.recording
             analysis.stt_model, analysis.transcript = await transcribe_call(path)
         if not analysis.transcript:
@@ -193,7 +325,7 @@ async def analyze_call(session: AsyncSession, call_id: uuid.UUID) -> AnalysisSta
             return analysis.status
         analysis.status = AnalysisStatus.ANALYZING
         criteria = await active_criteria(session)
-        scripts = await _scripts(session)
+        scripts = await _scripts(session, call)
         llm = get_llm()
         out = await llm.parse(
             system=system_prompt([(c.code, c.name_uz, c.description) for c in criteria], scripts),
@@ -221,7 +353,7 @@ async def pending_calls(session: AsyncSession, limit: int = 50) -> list[uuid.UUI
     """Calls to (re)analyse: never started, failed with attempts left, or stuck mid-way."""
     now = datetime.now(UTC)
     week = now - timedelta(days=7)
-    stuck = now - timedelta(minutes=30)
+    stuck = now - STUCK_AFTER
     new = select(Call.id).where(
         Call.recording_status == RecordingStatus.READY,
         Call.ended_at > week,

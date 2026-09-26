@@ -72,6 +72,8 @@ async def system_status(session: SessionDep, user: Staff) -> dict[str, Any]:
             "trunk": bool(s.sip_host),
             "last_call_at": last_call,
             "ai": openai_client.enabled(),
+            "ai_spent_today_usd": round(await openai_client.spent_today(), 4),
+            "ai_daily_budget_usd": s.ai_daily_budget_usd,
             "telegram": get_telegram() is not None,
             "instagram": get_instagram() is not None,
             "sms": sms.name if sms else None,

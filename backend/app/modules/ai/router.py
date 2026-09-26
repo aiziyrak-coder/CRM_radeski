@@ -41,6 +41,8 @@ async def ai_status(_: CurrentUser) -> dict[str, Any]:
         "enabled": openai_client.enabled(),
         "stt_model": settings.ai_stt_model,
         "llm_model": settings.ai_llm_model,
+        "spent_today_usd": round(await openai_client.spent_today(), 4),
+        "daily_budget_usd": settings.ai_daily_budget_usd,
     }
 
 

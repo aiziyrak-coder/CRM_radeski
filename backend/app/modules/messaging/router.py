@@ -209,6 +209,8 @@ async def send(
 async def ai_draft(conversation_id: uuid.UUID, session: SessionDep, _: Agent) -> dict[str, str]:
     if not openai_client.enabled():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="ai_disabled")
+    if not await openai_client.available():
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="ai_budget_exceeded")
     conv = await _conv_or_404(session, conversation_id)
     try:
         return {"text": await draft_reply(session, conv)}

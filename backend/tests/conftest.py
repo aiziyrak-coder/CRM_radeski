@@ -31,6 +31,9 @@ os.environ["ENVIRONMENT"] = "test"
 os.environ["TOTP_REPLAY_GUARD"] = "false"
 os.environ["DATABASE_URL"] = _test_db_url()
 os.environ["REDIS_URL"] = _test_redis_url()
+# tests never reach the real OpenAI/Telegram/SMS APIs, even with keys in the developer's .env
+for _var in ("OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN", "ESKIZ_EMAIL", "PLAYMOBILE_LOGIN"):
+    os.environ[_var] = ""
 
 from datetime import time  # noqa: E402
 

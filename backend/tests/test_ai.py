@@ -107,11 +107,11 @@ def fakes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FakeLlm:
     monkeypatch.setattr(qa, "get_llm", lambda: llm)
     monkeypatch.setattr("app.integrations.llm.get_llm", lambda: llm)
 
-    def fake_split(stereo: Path, workdir: Path) -> tuple[Path, Path]:
+    def fake_split(stereo: Path, workdir: Path) -> dict[str, list[ai.Chunk]]:
         op, pt = workdir / "operator.mp3", workdir / "patient.mp3"
         op.write_bytes(b"x")
         pt.write_bytes(b"x")
-        return op, pt
+        return {"operator": [(0.0, 12.0, op)], "patient": [(0.0, 12.0, pt)]}
 
     monkeypatch.setattr(ai, "split_channels", fake_split)
     return llm
@@ -160,6 +160,28 @@ def test_mask_pii_hides_numbers_but_keeps_times() -> None:
     assert mask_pii("raqamim +998 90 000-22-44, soat 10:30 da") == "raqamim [raqam], soat 10:30 da"
     assert mask_pii("pasport AB1234567") == "pasport AB[raqam]"
     assert mask_pii("2 ta vaqt: 15:00") == "2 ta vaqt: 15:00"
+    # speech recognition punctuates dictated numbers; times next to them stay
+    assert mask_pii("raqam 90, 000, 22, 44, soat 10:30") == "raqam [raqam], soat 10:30"
+    assert mask_pii("90.000.22.44") == "[raqam]"
+    assert mask_pii("karta 8600 0000 0000 0000") == "karta [raqam]"
+    # prices are kept for the analysis
+    assert mask_pii("narxi 1 500 000 so'm") == "narxi 1 500 000 so'm"
+
+
+def test_speech_chunks_cut_out_silence() -> None:
+    log = (
+        "Duration: 00:01:00.00, start: 0.000000, bitrate: 256 kb/s\n"
+        "[silencedetect] silence_start: 5.0\n[silencedetect] silence_end: 20.0 | d: 15\n"
+        "[silencedetect] silence_start: 21.0\n[silencedetect] silence_end: 21.5 | d: 0.5\n"
+        "[silencedetect] silence_start: 23.0\n[silencedetect] silence_end: 60.0 | d: 37\n"
+    )
+    speech = ai.speech_intervals(log)
+    assert speech == [(0.0, 5.0), (20.0, 21.0), (21.5, 23.0)]
+    # the short pause is kept inside one chunk; the 15 s silence is not sent to STT
+    assert ai.plan_chunks(speech, 60.0) == [(0.0, 5.3), (19.7, 23.3)]
+    # a 70 s monologue is split so timestamps stay useful
+    assert ai.plan_chunks([(0.0, 70.0)], 70.0) == [(0.0, 30.0), (30.0, 60.0), (60.0, 70.0)]
+    assert ai.speech_intervals("no duration here") == []
 
 
 def test_score_uses_weights_and_skips_not_applicable() -> None:
@@ -196,6 +218,46 @@ async def test_pipeline_transcribes_scores_and_flags(
     # idempotent: a second run doesn't call the model again
     await run_analysis(call.id)
     assert len(fakes.calls) == 1
+
+
+async def test_prompt_carries_only_the_expected_scripts(
+    client: AsyncClient, clinic: dict, fakes: FakeLlm
+) -> None:
+    await operator_with_extension()
+    call = await answered_call(client, "900.2")  # inbound, no task
+    await run_analysis(call.id)
+    system = fakes.calls[0]["system"]
+    assert "### incoming" in system and "### closing" in system
+    assert "### laser" not in system and "- laser:" in system  # listed, not spelled out
+
+
+async def test_daily_budget_stops_new_analyses(
+    client: AsyncClient, clinic: dict, fakes: FakeLlm, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.integrations import openai_client
+
+    await operator_with_extension()
+    monkeypatch.setattr(get_settings(), "ai_daily_budget_usd", 0.5)
+    await openai_client.add_spend(0.6)
+    call = await answered_call(client, "900.3")
+    analysis = await run_analysis(call.id)
+    assert analysis.status == "pending" and "budget" in analysis.error
+    assert analysis.attempts == 0 and fakes.calls == []  # nothing was sent, no attempt used
+
+    monkeypatch.setattr(get_settings(), "ai_daily_budget_usd", 5.0)
+    assert (await run_analysis(call.id)).status == "ready"
+
+
+async def test_a_call_in_progress_is_not_analysed_twice(
+    client: AsyncClient, clinic: dict, fakes: FakeLlm
+) -> None:
+    await operator_with_extension()
+    call = await answered_call(client, "900.4")
+    async with SessionLocal() as s:
+        s.add(CallAnalysis(call_id=call.id, status="transcribing", attempts=1))
+        await s.commit()
+    assert (await run_analysis(call.id)).status == "transcribing"
+    assert fakes.calls == []
 
 
 async def test_short_disabled_and_failed_calls(
