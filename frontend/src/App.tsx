@@ -4,6 +4,10 @@ import Layout from './components/Layout'
 import { useAuth } from './lib/auth-context'
 import { NAV_ITEMS, type NavItem } from './lib/navigation'
 import AuditPage from './pages/AuditPage'
+import CampaignsPage from './pages/CampaignsPage'
+import LeadsPage from './pages/LeadsPage'
+import ReportsPage from './pages/ReportsPage'
+import TasksPage from './pages/TasksPage'
 import DiagnosesPage from './pages/DiagnosesPage'
 import HomePage from './pages/HomePage'
 import MyDayPage from './pages/MyDayPage'
@@ -26,6 +30,10 @@ const PAGES: Record<string, ReactNode> = {
   '/schedule': <SchedulePage />,
   '/my-day': <MyDayPage />,
   '/settings': <SettingsPage />,
+  '/tasks': <TasksPage />,
+  '/leads': <LeadsPage />,
+  '/campaigns': <CampaignsPage />,
+  '/reports': <ReportsPage />,
 }
 
 // detail pages inherit the roles of their menu section

@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import ScriptsEditor from '../components/ScriptsEditor'
 import { Badge, Button, Card, ErrorText, Field, Input, Notice, Select } from '../components/ui'
 import { api, type User } from '../lib/api'
 import { useAuth } from '../lib/auth-context'
@@ -631,7 +632,9 @@ export default function SettingsPage() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const isAdmin = user?.role === 'admin'
-  const tabs = isAdmin ? (['doctors', 'resources', 'services'] as const) : (['doctors'] as const)
+  const tabs = isAdmin
+    ? (['doctors', 'resources', 'services', 'scripts'] as const)
+    : (['doctors', 'scripts'] as const)
   const [tab, setTab] = useState<(typeof tabs)[number]>('doctors')
   const sync = useMutation({
     mutationFn: syncCatalog,
@@ -656,7 +659,7 @@ export default function SettingsPage() {
             onClick={() => setTab(k)}
             className={`-mb-px border-b-2 px-3 py-2 text-sm ${tab === k ? 'border-teal-700 font-medium text-teal-800' : 'border-transparent text-slate-600'}`}
           >
-            {t(`settings.${k}`)}
+            {k === 'scripts' ? t('scripts.title') : t(`settings.${k}`)}
           </button>
         ))}
       </div>
@@ -664,6 +667,7 @@ export default function SettingsPage() {
         {tab === 'doctors' && <DoctorsTab isAdmin={isAdmin} />}
         {tab === 'resources' && <ResourcesTab />}
         {tab === 'services' && <ServicesTab />}
+        {tab === 'scripts' && <ScriptsEditor />}
       </Card>
     </div>
   )

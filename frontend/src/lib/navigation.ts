@@ -13,8 +13,8 @@ const ALL: readonly Role[] = ['operator', 'supervisor', 'registrar', 'doctor', '
 // Single source of truth for the menu and route guards (backend enforces the same roles on its API).
 export const NAV_ITEMS: readonly NavItem[] = [
   { path: '/', labelKey: 'nav.home', roles: ALL },
-  { path: '/tasks', labelKey: 'nav.tasks', roles: ['operator', 'supervisor', 'admin'], soon: true },
-  { path: '/leads', labelKey: 'nav.leads', roles: ['operator', 'supervisor', 'admin'], soon: true },
+  { path: '/tasks', labelKey: 'nav.tasks', roles: ['operator', 'supervisor', 'admin'] },
+  { path: '/leads', labelKey: 'nav.leads', roles: ['operator', 'supervisor', 'registrar', 'admin'] },
   {
     path: '/patients',
     labelKey: 'nav.patients',
@@ -27,9 +27,9 @@ export const NAV_ITEMS: readonly NavItem[] = [
   },
   { path: '/my-day', labelKey: 'nav.myDay', roles: ['doctor'] },
   { path: '/diagnoses', labelKey: 'nav.diagnoses', roles: ['doctor', 'supervisor', 'admin'] },
-  { path: '/campaigns', labelKey: 'nav.campaigns', roles: ['supervisor', 'admin'], soon: true },
+  { path: '/campaigns', labelKey: 'nav.campaigns', roles: ['supervisor', 'admin'] },
   { path: '/qa', labelKey: 'nav.qa', roles: ['supervisor', 'admin'], soon: true },
-  { path: '/reports', labelKey: 'nav.reports', roles: ['supervisor', 'owner', 'admin'], soon: true },
+  { path: '/reports', labelKey: 'nav.reports', roles: ['operator', 'supervisor', 'owner', 'admin'] },
   { path: '/users', labelKey: 'nav.users', roles: ['admin'] },
   { path: '/audit', labelKey: 'nav.audit', roles: ['admin', 'owner'] },
   { path: '/settings', labelKey: 'nav.settings', roles: ['supervisor', 'admin'] },

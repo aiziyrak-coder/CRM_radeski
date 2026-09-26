@@ -1,128 +1,14 @@
 """Scheduling: working hours, double-booking, devices, course intervals, statuses."""
 
-from datetime import date, datetime, time, timedelta
-from zoneinfo import ZoneInfo
+from datetime import datetime, time, timedelta
 
-import pytest
 from httpx import AsyncClient
 
 from app.core.db import SessionLocal
-from app.core.text import search_key
-from app.modules.catalog.models import (
-    Branch,
-    Doctor,
-    Resource,
-    ResourceKind,
-    Service,
-    ServiceCategory,
-)
-from app.modules.patients.models import Patient, PatientKind, PatientPhone
-from app.modules.scheduling.models import DoctorSchedule
+from app.modules.catalog.models import Doctor
 from app.modules.users.models import Role
 from tests.conftest import bearer, login, make_user
-
-TZ = ZoneInfo("Asia/Tashkent")
-
-
-def next_monday() -> date:
-    today = date.today()
-    return today + timedelta(days=(7 - today.weekday()) % 7 or 7) + timedelta(days=7)
-
-
-def at(day: date, hh: int, mm: int = 0) -> str:
-    return datetime.combine(day, time(hh, mm), TZ).isoformat()
-
-
-@pytest.fixture
-async def clinic() -> dict:
-    """Branch, two dermatologists (Mon 09-13), one trichologist, a laser device, services."""
-    async with SessionLocal() as s:
-        branch = Branch(name_uz="Farg'ona", name_ru="Фергана", is_main=True)
-        derm = ServiceCategory(
-            site_id="dermatologiya", name_uz="Derm", name_ru="Derm", specialty="dermatologist"
-        )
-        cosm = ServiceCategory(
-            site_id="laser", name_uz="Lazer", name_ru="Лазер", specialty="cosmetologist"
-        )
-        s.add_all([branch, derm, cosm])
-        await s.flush()
-        d1 = Doctor(
-            name_uz="Doktor A", name_ru="Доктор А", specialties=["dermatologist"], sort_order=1
-        )
-        d2 = Doctor(
-            name_uz="Doktor B",
-            name_ru="Доктор Б",
-            specialties=["dermatologist", "cosmetologist"],
-            sort_order=2,
-        )
-        tri = Doctor(
-            name_uz="Trixolog", name_ru="Трихолог", specialties=["trichologist"], sort_order=3
-        )
-        consult = Service(
-            name_uz="Konsultatsiya",
-            name_ru="Консультация",
-            category_id=derm.id,
-            duration_min=30,
-            is_consultation=True,
-        )
-        laser = Service(
-            name_uz="Lazer epilyatsiya",
-            name_ru="Лазерная эпиляция",
-            category_id=cosm.id,
-            duration_min=60,
-            device_type="laser_epilation",
-            min_interval_days=30,
-        )
-        s.add_all([d1, d2, tri, consult, laser])
-        await s.flush()
-        s.add(
-            Resource(
-                branch_id=branch.id,
-                name="Lazer 1",
-                kind=ResourceKind.DEVICE,
-                device_type="laser_epilation",
-            )
-        )
-        for doc in (d1, d2):
-            s.add(
-                DoctorSchedule(
-                    doctor_id=doc.id,
-                    branch_id=branch.id,
-                    weekday=0,
-                    start_time=time(9),
-                    end_time=time(13),
-                )
-            )
-        patient = Patient(
-            full_name="Sinov Bemor",
-            search_key=search_key("Sinov Bemor"),
-            kind=PatientKind.LEGACY,
-            tags=[],
-            phones=[PatientPhone(number="+998900000001", is_primary=True)],
-        )
-        s.add(patient)
-        await s.commit()
-        return {
-            "branch": str(branch.id), "d1": str(d1.id), "d2": str(d2.id), "tri": str(tri.id),
-            "consult": str(consult.id), "laser": str(laser.id), "patient": str(patient.id),
-        }  # fmt: skip
-
-
-@pytest.fixture
-async def op(client: AsyncClient) -> dict:
-    await make_user("op1", Role.OPERATOR)
-    return bearer(await login(client, "op1"))
-
-
-def booking(c: dict, starts_at: str, doctor: str = "d1", service: str = "consult", **extra) -> dict:
-    return {
-        "patient_id": c["patient"],
-        "branch_id": c["branch"],
-        "doctor_id": c[doctor],
-        "service_ids": [c[service]],
-        "starts_at": starts_at,
-        **extra,
-    }
+from tests.factories import TZ, at, booking, next_monday
 
 
 async def test_slot_finder_offers_earliest_distinct_times(

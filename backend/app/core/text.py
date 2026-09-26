@@ -18,7 +18,7 @@ class InvalidPhoneError(ValueError):
 
 
 def normalize_uz_phone(raw: str) -> str:
-    """'90-165-43-41', '901654341', '+998 90 165 43 41', '8 90 165 43 41' -> '+998901654341'."""
+    """'90-000-11-22', '900001122', '+998 90 000 11 22', '8 90 000 11 22' -> '+998900001122'."""
     digits = re.sub(r"\D", "", raw or "")
     if len(digits) == 12 and digits.startswith("998"):
         digits = digits[3:]
@@ -30,7 +30,7 @@ def normalize_uz_phone(raw: str) -> str:
 
 
 def format_uz_phone(e164: str) -> str:
-    """'+998901654341' -> '+998 90 165-43-41' (display only)."""
+    """'+998900001122' -> '+998 90 000-11-22' (display only)."""
     d = e164.removeprefix("+998")
     if len(d) != _UZ_NATIONAL_LEN:
         return e164

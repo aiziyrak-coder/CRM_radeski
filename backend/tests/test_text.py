@@ -12,31 +12,31 @@ from app.core.text import (
 @pytest.mark.parametrize(
     "raw",
     [
-        "90-165-43-41",  # nomer.xlsx format
-        "901654341",  # patient export format
-        "+998 90 165 43 41",
-        "998901654341",
-        "(90) 165-43-41",
-        "8 90 165 43 41",
+        "90-000-11-22",  # nomer.xlsx format
+        "900001122",  # patient export format
+        "+998 90 000 11 22",
+        "998900001122",
+        "(90) 000-11-22",
+        "8 90 000 11 22",
     ],
 )
 def test_phone_formats_normalize_to_e164(raw: str) -> None:
-    assert normalize_uz_phone(raw) == "+998901654341"
+    assert normalize_uz_phone(raw) == "+998900001122"
 
 
-@pytest.mark.parametrize("raw", ["", "12345", "0901654341", "99890165434", "abc"])
+@pytest.mark.parametrize("raw", ["", "12345", "0900001122", "99890000112", "abc"])
 def test_invalid_phones_rejected(raw: str) -> None:
     with pytest.raises(InvalidPhoneError):
         normalize_uz_phone(raw)
 
 
 def test_format_for_display() -> None:
-    assert format_uz_phone("+998901654341") == "+998 90 165-43-41"
+    assert format_uz_phone("+998900001122") == "+998 90 000-11-22"
 
 
 @pytest.mark.parametrize(
     ("q", "expected"),
-    [("4341", "4341"), ("90 165", "90165"), ("+998901654341", "901654341"), ("Ali", None)],
+    [("1122", "1122"), ("90 000", "90000"), ("+998900001122", "900001122"), ("Ali", None)],
 )
 def test_phone_query_detection(q: str, expected: str | None) -> None:
     assert phone_digits_query(q) == expected

@@ -45,10 +45,18 @@ services:
 
   worker:
     <<: *backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://crm:${DB_PASSWORD:?DB_PASSWORD kerak}@db:5432/crm
+      REDIS_URL: redis://redis:6379/0
+      DB_NULL_POOL: "true"
     command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
 
   beat:
     <<: *backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://crm:${DB_PASSWORD:?DB_PASSWORD kerak}@db:5432/crm
+      REDIS_URL: redis://redis:6379/0
+      DB_NULL_POOL: "true"
     command: ["celery", "-A", "app.workers.celery_app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
 
   db:

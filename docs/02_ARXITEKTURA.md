@@ -118,7 +118,7 @@ settings (kalit, qiymat)            audit_log (user, amal, obyekt, oldin, keyin,
 
 **Muhim qarorlar:**
 - `fio_translit` ustunida F.I.Sh.ning kirill→lotin normallashtirilgan varianti saqlanadi va `pg_trgm` indeksi qo'yiladi. Qidiruv so'rovi ham shu tartibda normallashtiriladi. Shunda "Абдуллаев" va "Abdullayev" bir xil topiladi.
-- Telefon har doim E.164 formatida saqlanadi (`+998901234567`). Barcha kirish nuqtalari normallashtirishdan o'tadi: import, forma, telefoniya.
+- Telefon har doim E.164 formatida saqlanadi (`+998900002244`). Barcha kirish nuqtalari normallashtirishdan o'tadi: import, forma, telefoniya.
 - Barcha statuslar Python `Enum` ko'rinishida saqlanadi. O'tishlar faqat servis funksiyalari orqali bajariladi va har bir o'tish hodisa chiqaradi.
 
 ---

@@ -94,6 +94,22 @@ export function searchPatients(params: {
 
 export const getPatient = (id: string) => api<Patient>(`/patients/${id}`)
 
+export type TimelineKind =
+  'registered' | 'legacy_visit' | 'lead' | 'appointment' | 'call' | 'planned_call' | 'recommendation'
+
+export interface TimelineEvent {
+  kind: TimelineKind
+  at: string
+  status: string | null
+  title: string | null
+  detail: string | null
+  reason: string | null
+  user: string | null
+}
+
+export const getTimeline = (id: string, lang: Language) =>
+  api<TimelineEvent[]>(`/patients/${id}/timeline?lang=${lang}`)
+
 export const createPatient = (body: PatientInput, force = false) =>
   api<Patient>(`/patients${force ? '?force=true' : ''}`, { method: 'POST', body })
 
@@ -132,6 +148,14 @@ export function formatDate(iso: string | null): string {
   if (!iso) return '—'
   const [y, m, d] = iso.slice(0, 10).split('-')
   return `${d}.${m}.${y}`
+}
+
+/** '+998900001122' -> '+998 90 000-11-22' (display only; mirrors backend format_uz_phone) */
+export function formatPhone(e164: string | null): string {
+  if (!e164) return ''
+  const d = e164.replace(/^\+998/, '')
+  if (d.length !== 9) return e164
+  return `+998 ${d.slice(0, 2)} ${d.slice(2, 5)}-${d.slice(5, 7)}-${d.slice(7)}`
 }
 
 /** ISO timestamp -> '12.04.2026 14:30' in the clinic time zone */

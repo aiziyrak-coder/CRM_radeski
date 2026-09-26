@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router'
 import AppointmentPanel, { StatusActions, StatusPill } from '../components/AppointmentPanel'
 import BookingDialog from '../components/BookingDialog'
 import PatientName from '../components/PatientName'
+import { formatPhone } from '../lib/patients'
 import { Button, Card, ErrorText, Input, Select } from '../components/ui'
 import {
   STATUS_STYLE,
@@ -160,7 +161,9 @@ function List({ appointments, onOpen }: { appointments: Appointment[]; onOpen: (
                 <button className="font-medium text-teal-800 hover:underline" onClick={() => onOpen(a)}>
                   <PatientName name={a.patient_name} />
                 </button>
-                {a.patient_phone && <div className="text-xs text-slate-500">{a.patient_phone}</div>}
+                {a.patient_phone && (
+                  <div className="text-xs text-slate-500">{formatPhone(a.patient_phone)}</div>
+                )}
               </td>
               <td className="py-2 pr-3">{a.doctor_name}</td>
               <td className="py-2 pr-3">

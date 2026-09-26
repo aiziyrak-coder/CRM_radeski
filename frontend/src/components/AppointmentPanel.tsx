@@ -13,6 +13,7 @@ import {
   type Appointment,
   type AppointmentStatus,
 } from '../lib/scheduling'
+import { formatPhone } from '../lib/patients'
 import BookingDialog from './BookingDialog'
 import PatientName from './PatientName'
 import { Button, ErrorText, Field, Modal, Select } from './ui'
@@ -83,7 +84,7 @@ export default function AppointmentPanel({ a, onClose }: { a: Appointment; onClo
           </Link>
           {a.patient_phone && (
             <a href={`tel:${a.patient_phone}`} className="ml-2 text-slate-600">
-              {a.patient_phone}
+              {formatPhone(a.patient_phone)}
             </a>
           )}
         </div>

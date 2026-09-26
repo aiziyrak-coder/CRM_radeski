@@ -79,7 +79,7 @@ export default function PatientForm({ initial, withPhone, busy, error, onSubmit,
             <Input
               type="tel"
               inputMode="tel"
-              placeholder="90 123 45 67"
+              placeholder="90 000 22 44"
               value={form.phone}
               onChange={(e) => set('phone', e.target.value)}
               required

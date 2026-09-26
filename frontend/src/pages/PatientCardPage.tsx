@@ -11,18 +11,22 @@ import PatientRow from '../components/PatientRow'
 import { Badge, Button, Card, ErrorText, Field, Input, Notice } from '../components/ui'
 import { useAuth } from '../lib/auth-context'
 import { categoryName, getCategories } from '../lib/diagnoses'
-import { clinicDate, clinicTime, getPatientAppointments, getPatientRecommendations } from '../lib/scheduling'
+import type { AppointmentStatus } from '../lib/scheduling'
 import {
   addPhone,
   deletePhone,
   formatDate,
+  formatDateTime,
   getPatient,
+  getTimeline,
   mergePatients,
   searchPatients,
   setDoNotCall,
   updatePatient,
   updatePhone,
   type Patient,
+  type TimelineEvent,
+  type TimelineKind,
 } from '../lib/patients'
 
 function useSetPatient(id: string) {
@@ -100,52 +104,121 @@ function Details({ patient }: { patient: Patient }) {
   )
 }
 
-function Visits({ patient }: { patient: Patient }) {
+const KIND_STYLE: Record<TimelineKind, string> = {
+  registered: 'bg-slate-400',
+  legacy_visit: 'bg-slate-400',
+  lead: 'bg-sky-500',
+  appointment: 'bg-teal-600',
+  call: 'bg-amber-500',
+  planned_call: 'bg-amber-300',
+  recommendation: 'bg-violet-500',
+}
+
+function EventLine({ e }: { e: TimelineEvent }) {
+  const { t } = useTranslation()
+  switch (e.kind) {
+    case 'appointment':
+      return (
+        <>
+          <span className="font-medium">{t('timeline.appointment')}</span>
+          {e.title && ` · ${e.title}`}
+          {e.detail && <span className="text-slate-600"> · {e.detail}</span>}{' '}
+          <StatusPill status={e.status as AppointmentStatus} />
+          {e.reason && (
+            <span className="text-xs text-slate-500">
+              {' '}
+              {t(`cancelReasons.${e.reason}`, { defaultValue: e.reason })}
+            </span>
+          )}
+        </>
+      )
+    case 'call':
+    case 'planned_call':
+      return (
+        <>
+          <span className="font-medium">
+            {t(e.kind === 'call' ? 'timeline.call' : 'timeline.plannedCall')}
+          </span>
+          {e.title && ` · ${t(`taskTypes.${e.title}`, { defaultValue: e.title })}`}
+          {e.status && (
+            <Badge tone={e.status === 'booked' || e.status === 'confirmed' ? 'good' : 'neutral'}>
+              {t(`outcomes.${e.status}`, { defaultValue: e.status })}
+            </Badge>
+          )}
+          {e.reason && (
+            <span className="text-slate-600"> · {t(`reasons.${e.reason}`, { defaultValue: e.reason })}</span>
+          )}
+          {e.detail && <div className="whitespace-pre-line text-slate-600">{e.detail}</div>}
+          {e.user && <div className="text-xs text-slate-500">{e.user}</div>}
+        </>
+      )
+    case 'lead':
+      return (
+        <>
+          <span className="font-medium">{t('timeline.lead')}</span>
+          {e.title && ` · ${t(`leads.channels.${e.title}`, { defaultValue: e.title })}`}{' '}
+          {e.status && <Badge tone="info">{t(`leads.stages.${e.status}`)}</Badge>}
+          {e.detail && <div className="text-slate-600">{e.detail}</div>}
+        </>
+      )
+    case 'recommendation':
+      return (
+        <>
+          <span className="font-medium">{t('recommendations.title')}</span>
+          {e.title && ` · ${e.title}`}
+          {e.reason && (
+            <span>
+              {' '}
+              · {t('recommendations.due')}: <span className="tabular-nums">{formatDate(e.reason)}</span>
+            </span>
+          )}{' '}
+          {e.status && (
+            <Badge tone={e.status === 'open' ? 'info' : 'neutral'}>{t(`recommendations.${e.status}`)}</Badge>
+          )}
+          {e.detail && <div className="text-slate-600">{e.detail}</div>}
+        </>
+      )
+    case 'registered':
+      return (
+        <span className="text-slate-600">
+          {t('timeline.registered')}
+          {e.title && ` · ${t(`sources.${e.title}`, { defaultValue: e.title })}`}
+        </span>
+      )
+    case 'legacy_visit':
+      return <span className="text-slate-600">{t('timeline.legacyVisit')}</span>
+  }
+}
+
+function Timeline({ patient }: { patient: Patient }) {
   const { t, i18n } = useTranslation()
-  const { data: visits = [] } = useQuery({
-    queryKey: ['appointments', 'patient', patient.id],
-    queryFn: () => getPatientAppointments(patient.id),
+  const lang = i18n.language === 'ru' ? 'ru' : 'uz'
+  const { data: events, error } = useQuery({
+    queryKey: ['appointments', 'timeline', patient.id, lang],
+    queryFn: () => getTimeline(patient.id, lang),
   })
-  const { data: recs = [] } = useQuery({
-    queryKey: ['appointments', 'recommendations', patient.id],
-    queryFn: () => getPatientRecommendations(patient.id),
-  })
+  const now = new Date().toISOString()
   return (
-    <Card title={t('visits.title')}>
-      {visits.length === 0 ? (
-        <p className="text-sm text-slate-500">{t('visits.none')}</p>
-      ) : (
-        <ul className="divide-y divide-slate-100 text-sm">
-          {visits.map((a) => (
-            <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-              <span>
-                <span className="tabular-nums">
-                  {formatDate(clinicDate(a.starts_at))} {clinicTime(a.starts_at)}
-                </span>{' '}
-                · {a.doctor_name} ·{' '}
-                {a.services.map((s) => (i18n.language === 'ru' ? s.name_ru : s.name_uz)).join(', ')}
-              </span>
-              <StatusPill status={a.status} />
-            </li>
-          ))}
-        </ul>
-      )}
-      {recs.length > 0 && (
-        <div className="mt-4">
-          <h3 className="mb-1 text-sm font-medium">{t('recommendations.title')}</h3>
-          <ul className="space-y-1 text-sm">
-            {recs.map((r) => (
-              <li key={r.id}>
-                {t('recommendations.due')}: <span className="tabular-nums">{formatDate(r.due_date)}</span>
-                {r.note && <span className="text-slate-600"> — {r.note}</span>}{' '}
-                <Badge tone={r.status === 'open' ? 'info' : 'neutral'}>
-                  {t(`recommendations.${r.status}`)}
-                </Badge>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+    <Card title={t('patients.history')}>
+      <ErrorText error={error} />
+      {events && events.length === 0 && <p className="text-sm text-slate-500">{t('timeline.empty')}</p>}
+      <ol className="relative space-y-3 border-l border-slate-200 pl-4 text-sm">
+        {events?.map((e, i) => (
+          <li key={i} className={e.at > now ? 'opacity-90' : undefined}>
+            <span
+              className={`absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full ${KIND_STYLE[e.kind]}`}
+              aria-hidden
+            />
+            <div className="text-xs text-slate-500 tabular-nums">
+              {e.kind === 'legacy_visit' ? formatDate(e.at) : formatDateTime(e.at)}
+              {e.at > now && ` · ${t('timeline.upcoming')}`}
+            </div>
+            <div className="space-x-1">
+              <EventLine e={e} />
+            </div>
+          </li>
+        ))}
+      </ol>
     </Card>
   )
 }
@@ -250,7 +323,7 @@ function Phones({ patient }: { patient: Patient }) {
         <Input
           type="tel"
           inputMode="tel"
-          placeholder="90 123 45 67"
+          placeholder="90 000 22 44"
           value={number}
           onChange={(e) => setNumber(e.target.value)}
           required
@@ -429,7 +502,7 @@ export default function PatientCardPage() {
         <div className="space-y-6 lg:col-span-2">
           <Details patient={patient} />
           <Conditions patient={patient} />
-          <Visits patient={patient} />
+          <Timeline patient={patient} />
         </div>
         <div className="space-y-6">
           <Phones patient={patient} />

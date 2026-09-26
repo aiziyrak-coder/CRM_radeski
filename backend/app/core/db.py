@@ -44,7 +44,7 @@ engine = create_async_engine(
     _settings.database_url,
     pool_pre_ping=True,
     # tests run each case in its own event loop; pooled asyncpg connections can't cross loops
-    poolclass=NullPool if _settings.environment == "test" else None,
+    poolclass=NullPool if _settings.environment == "test" or _settings.db_null_pool else None,
 )
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 

@@ -46,6 +46,8 @@ export function setAccessToken(token: string | null) {
   accessToken = token
 }
 
+export const getAccessToken = () => accessToken
+
 export function setSessionHandlers(handlers: { expired: () => void; refreshed: (t: TokenResponse) => void }) {
   onSessionExpired = handlers.expired
   onTokenRefreshed = handlers.refreshed

@@ -34,12 +34,12 @@ Claude Code bilan ishlash tartibi: bitta sessiyada bitta vazifa (masalan, "0.3 �
 
 | # | Vazifa | Qabul mezoni |
 |---|---|---|
-| 2.1 | Hodisalar tizimi va vazifa qoidalari (TZ 4.5 dagi 11 ta tur), Celery Beat jadvali, idempotentlik | Har bir qoida uchun test bor. Qayta ishga tushirilsa dublikat yaratilmaydi |
-| 2.2 | Vazifalar navbati UI: umumiy navbat, ustuvorlik, filtrlar, vazifa kartochkasi, natija formasi, qayta urinishlar, smena topshirish izohi | Operator ertalab tayyor ro'yxatni ko'radi. Natija kiritilganda vazifa yopiladi yoki keyingisi yaratiladi |
-| 2.3 | Murojaatlar va voronka, SLA taymerlari, radeski.uz backend'iga webhook qo'shish (va zaxira tekshiruv) | Saytdan yuborilgan ariza bir necha soniyada CRM'da paydo bo'ladi. 15 daqiqa o'tsa qizarib ko'rinadi |
-| 2.4 | Skriptlar moduli (12 skript, RU/UZ, o'rinlarni to'ldirish) va sabablar ma'lumotnomalari | Vazifa ochilganda to'g'ri skript bemor ma'lumotlari bilan chiqadi |
-| 2.5 | Bemor kartasi: yagona tarix tasmasi | Barcha hodisalar vaqt tartibida ko'rinadi |
-| 2.6 | Hisobotlar: operatorning kunlik hisoboti va KPI dashboard, Excel eksport | TZ 4.11 dagi barcha ko'rsatkichlar hisoblanadi |
+| 2.1 ✅ | Hodisalar tizimi va vazifa qoidalari (TZ 4.5 dagi 11 ta tur), Celery Beat jadvali, idempotentlik | Har bir qoida uchun test bor. Qayta ishga tushirilsa dublikat yaratilmaydi |
+| 2.2 ✅ | Vazifalar navbati UI: umumiy navbat, ustuvorlik, filtrlar, vazifa kartochkasi, natija formasi, qayta urinishlar, smena topshirish izohi | Operator ertalab tayyor ro'yxatni ko'radi. Natija kiritilganda vazifa yopiladi yoki keyingisi yaratiladi |
+| 2.3 ✅ | Murojaatlar va voronka, SLA taymerlari, radeski.uz backend'iga webhook qo'shish (va zaxira tekshiruv; sayt tomoni: `docs/05_SAYT_INTEGRATSIYA.md`) | Saytdan yuborilgan ariza bir necha soniyada CRM'da paydo bo'ladi. 15 daqiqa o'tsa qizarib ko'rinadi |
+| 2.4 ✅ | Skriptlar moduli (12 skript, RU/UZ, o'rinlarni to'ldirish) va sabablar ma'lumotnomalari | Vazifa ochilganda to'g'ri skript bemor ma'lumotlari bilan chiqadi |
+| 2.5 ✅ | Bemor kartasi: yagona tarix tasmasi | Barcha hodisalar vaqt tartibida ko'rinadi |
+| 2.6 ✅ | Hisobotlar: operatorning kunlik hisoboti va KPI dashboard, Excel eksport | TZ 4.11 dagi barcha ko'rsatkichlar hisoblanadi |
 
 **Natija**: telefoniyasiz ham ishlaydigan CRM. Operator oddiy telefondan qo'ng'iroq qilib, natijani tizimga kiritadi. Klinika shu bosqichdan boshlab tizimdan **haqiqiy foydalanishni boshlaydi**.
 

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,7 @@ from app.modules.catalog.models import (
     Service,
     ServiceCategory,
 )
+from app.modules.patients import service as patients_service
 from app.modules.patients.models import Patient, PatientKind, Source
 from app.modules.scheduling.models import (
     ACTIVE_STATUSES,
@@ -27,6 +28,7 @@ from app.modules.scheduling.models import (
     AppointmentStatus,
     DoctorAbsence,
     DoctorSchedule,
+    Recommendation,
 )
 
 SLOT_STEP = timedelta(minutes=15)
@@ -457,3 +459,13 @@ async def day_appointments(
     if not include_inactive:
         stmt = stmt.where(Appointment.status.in_(ACTIVE_STATUSES))
     return list(await session.scalars(stmt.order_by(Appointment.starts_at)))
+
+
+async def _merge_patients(session: AsyncSession, target: uuid.UUID, source: uuid.UUID) -> None:
+    for model in (Appointment, Recommendation):
+        await session.execute(
+            update(model).where(model.patient_id == source).values(patient_id=target)
+        )
+
+
+patients_service.MERGE_HOOKS.append(_merge_patients)

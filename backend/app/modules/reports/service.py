@@ -1,0 +1,309 @@
+"""Operator daily report and KPIs (TZ 4.11). All figures are computed from source tables."""
+
+import uuid
+from datetime import date, datetime
+from typing import Any
+
+from sqlalchemy import and_, distinct, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core import clinic_time
+from app.modules.leads.models import Lead
+from app.modules.scheduling.models import (
+    Appointment,
+    AppointmentStatus,
+    Recommendation,
+    RecommendationStatus,
+)
+from app.modules.tasks.models import REACHED, Outcome, TaskAttempt, TaskType
+from app.modules.users.models import User
+
+S = AppointmentStatus
+
+
+def _range(date_from: date, date_to: date) -> tuple[datetime, datetime]:
+    return clinic_time.day_bounds(date_from)[0], clinic_time.day_bounds(date_to)[1]
+
+
+def _pct(part: int, whole: int) -> float | None:
+    return round(100 * part / whole, 1) if whole else None
+
+
+async def _count(session: AsyncSession, stmt) -> int:
+    return await session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+
+
+async def daily(
+    session: AsyncSession, day: date, user_id: uuid.UUID | None = None
+) -> dict[str, Any]:
+    start, end = clinic_time.day_bounds(day)
+    attempts = select(TaskAttempt).where(
+        TaskAttempt.created_at >= start, TaskAttempt.created_at < end
+    )
+    if user_id:
+        attempts = attempts.where(TaskAttempt.user_id == user_id)
+    sub = attempts.subquery()
+
+    by_outcome = dict(
+        (await session.execute(select(sub.c.outcome, func.count()).group_by(sub.c.outcome))).all()
+    )
+    reasons = dict(
+        (
+            await session.execute(
+                select(sub.c.reason, func.count())
+                .where(sub.c.reason.is_not(None))
+                .group_by(sub.c.reason)
+            )
+        ).all()
+    )
+    campaign = dict(
+        (
+            await session.execute(
+                select(sub.c.outcome, func.count())
+                .where(sub.c.task_type.in_((TaskType.CAMPAIGN, TaskType.REACTIVATION)))
+                .group_by(sub.c.outcome)
+            )
+        ).all()
+    )
+    repeat_bookings = await session.scalar(
+        select(func.count())
+        .select_from(sub)
+        .where(
+            sub.c.outcome == Outcome.BOOKED,
+            sub.c.task_type.in_((TaskType.REPEAT_VISIT, TaskType.COURSE_CONTINUE)),
+        )
+    )
+    booked = select(Appointment.id).where(
+        Appointment.created_at >= start, Appointment.created_at < end
+    )
+    if user_id:
+        booked = booked.where(Appointment.created_by == user_id)
+    changed = and_(Appointment.status_changed_at >= start, Appointment.status_changed_at < end)
+    no_shows = select(Appointment.id).where(
+        Appointment.starts_at >= start, Appointment.starts_at < end, Appointment.status == S.NO_SHOW
+    )
+    total_attempts = sum(by_outcome.values())
+    reached = sum(n for o, n in by_outcome.items() if o in REACHED)
+    return {
+        "date": day.isoformat(),
+        "inbound_calls": None,  # filled by the telephony module (phase 3)
+        "outbound_attempts": total_attempts,
+        "reached": reached,
+        "dial_rate": _pct(reached, total_attempts),
+        "new_leads": await _count(
+            session, select(Lead.id).where(Lead.created_at >= start, Lead.created_at < end)
+        ),
+        "booked": await _count(session, booked),
+        "repeat_bookings": repeat_bookings or 0,
+        "not_booked": by_outcome.get(Outcome.REFUSED, 0) + by_outcome.get(Outcome.THINKING, 0),
+        "reasons": {str(k): v for k, v in reasons.items()},
+        "cancellations": await _count(
+            session, select(Appointment.id).where(changed, Appointment.status == S.CANCELLED)
+        ),
+        "reschedules": await _count(
+            session, select(Appointment.id).where(changed, Appointment.status == S.RESCHEDULED)
+        ),
+        "no_shows": await _count(session, no_shows),
+        "outcomes": {str(k): v for k, v in by_outcome.items()},
+        "campaign_outcomes": {str(k): v for k, v in campaign.items()},
+    }
+
+
+async def kpi(session: AsyncSession, date_from: date, date_to: date) -> dict[str, Any]:
+    start, end = _range(date_from, date_to)
+    now = clinic_time.now()
+
+    leads_in = select(Lead).where(Lead.created_at >= start, Lead.created_at < end).subquery()
+    leads_total = await session.scalar(select(func.count()).select_from(leads_in)) or 0
+    leads_booked = (
+        await session.scalar(
+            select(func.count()).select_from(leads_in).where(leads_in.c.appointment_id.is_not(None))
+        )
+        or 0
+    )
+    median_seconds = await session.scalar(
+        select(
+            func.percentile_cont(0.5).within_group(
+                func.extract("epoch", leads_in.c.first_response_at - leads_in.c.created_at)
+            )
+        ).where(leads_in.c.first_response_at.is_not(None))
+    )
+    breached = (
+        await session.scalar(
+            select(func.count())
+            .select_from(leads_in)
+            .where(func.coalesce(leads_in.c.first_response_at, now) > leads_in.c.sla_due_at)
+        )
+        or 0
+    )
+
+    attempts = (
+        select(TaskAttempt)
+        .where(TaskAttempt.created_at >= start, TaskAttempt.created_at < end)
+        .subquery()
+    )
+    total_attempts = await session.scalar(select(func.count()).select_from(attempts)) or 0
+    reached = (
+        await session.scalar(
+            select(func.count()).select_from(attempts).where(attempts.c.outcome.in_(REACHED))
+        )
+        or 0
+    )
+    confirm_calls = (
+        await session.scalar(
+            select(func.count(distinct(attempts.c.task_id))).where(
+                attempts.c.task_type == TaskType.CONFIRM_VISIT
+            )
+        )
+        or 0
+    )
+    confirmed = (
+        await session.scalar(
+            select(func.count(distinct(attempts.c.task_id))).where(
+                attempts.c.task_type == TaskType.CONFIRM_VISIT,
+                attempts.c.outcome == Outcome.CONFIRMED,
+            )
+        )
+        or 0
+    )
+    returned = (
+        await session.scalar(
+            select(func.count(distinct(attempts.c.patient_id))).where(
+                attempts.c.task_type.in_((TaskType.CAMPAIGN, TaskType.REACTIVATION)),
+                attempts.c.outcome == Outcome.BOOKED,
+            )
+        )
+        or 0
+    )
+
+    past = (
+        select(Appointment.status)
+        .where(
+            Appointment.starts_at >= start,
+            Appointment.starts_at < min(end, now),
+            Appointment.status.in_((S.SCHEDULED, S.CONFIRMED, S.ARRIVED, S.COMPLETED, S.NO_SHOW)),
+        )
+        .subquery()
+    )
+    past_total = await session.scalar(select(func.count()).select_from(past)) or 0
+    visited = (
+        await session.scalar(
+            select(func.count())
+            .select_from(past)
+            .where(past.c.status.in_((S.ARRIVED, S.COMPLETED)))
+        )
+        or 0
+    )
+    no_show = (
+        await session.scalar(
+            select(func.count()).select_from(past).where(past.c.status == S.NO_SHOW)
+        )
+        or 0
+    )
+
+    recs = (
+        select(Recommendation.status)
+        .where(Recommendation.due_date >= date_from, Recommendation.due_date <= date_to)
+        .subquery()
+    )
+    recs_total = await session.scalar(select(func.count()).select_from(recs)) or 0
+    recs_booked = (
+        await session.scalar(
+            select(func.count())
+            .select_from(recs)
+            .where(recs.c.status == RecommendationStatus.BOOKED)
+        )
+        or 0
+    )
+
+    operators = await session.execute(
+        select(
+            User.id, User.full_name, func.count(attempts.c.id),
+            func.count().filter(attempts.c.outcome.in_(REACHED)),
+            func.count().filter(attempts.c.outcome == Outcome.BOOKED),
+        )
+        .join(attempts, attempts.c.user_id == User.id)
+        .group_by(User.id, User.full_name)
+        .order_by(User.full_name)
+    )  # fmt: skip
+    bookings_by_user = dict(
+        (
+            await session.execute(
+                select(Appointment.created_by, func.count())
+                .where(Appointment.created_at >= start, Appointment.created_at < end)
+                .group_by(Appointment.created_by)
+            )
+        ).all()
+    )
+    return {
+        "from": date_from.isoformat(),
+        "to": date_to.isoformat(),
+        "leads_total": leads_total,
+        "lead_to_booking": _pct(leads_booked, leads_total),
+        "first_response_median_min": round(median_seconds / 60, 1)
+        if median_seconds is not None
+        else None,
+        "sla_breached": breached,
+        "attempts": total_attempts,
+        "dial_rate": _pct(reached, total_attempts),
+        "confirmation_rate": _pct(confirmed, confirm_calls),
+        "booking_to_visit": _pct(visited, past_total),
+        "no_show_rate": _pct(no_show, past_total),
+        "repeat_rate": _pct(recs_booked, recs_total),
+        "returned_patients": returned,
+        "operators": [
+            {
+                "user_id": str(uid),
+                "name": name,
+                "attempts": n,
+                "reached": r,
+                "dial_rate": _pct(r, n),
+                "booked_by_phone": b,
+                "appointments_created": bookings_by_user.get(uid, 0),
+            }
+            for uid, name, n, r, b in operators
+        ],  # fmt: skip
+    }
+
+
+def kpi_workbook(data: dict[str, Any], labels: dict[str, str]) -> bytes:
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "KPI"
+    ws.append(["Davr / Период", f"{data['from']} — {data['to']}"])
+    for key, label in labels.items():
+        ws.append([label, data.get(key)])
+    ops = wb.create_sheet("Operatorlar")
+    ops.append(
+        [
+            "Operator",
+            "Urinishlar",
+            "Gaplashildi",
+            "Dozvon %",
+            "Tel. orqali yozildi",
+            "Yaratilgan qabullar",
+        ]
+    )
+    for o in data["operators"]:
+        ops.append(
+            [
+                o["name"],
+                o["attempts"],
+                o["reached"],
+                o["dial_rate"],
+                o["booked_by_phone"],
+                o["appointments_created"],
+            ]
+        )
+    for sheet in (ws, ops):
+        for column in sheet.columns:
+            sheet.column_dimensions[column[0].column_letter].width = max(
+                12, *(len(str(c.value or "")) + 2 for c in column)
+            )
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

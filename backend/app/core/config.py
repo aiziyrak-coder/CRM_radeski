@@ -21,9 +21,17 @@ class Settings(BaseSettings):
     login_max_attempts: int = 5
     login_lock_minutes: int = 15
 
-    # External services (filled in later phases)
+    # External services
     openai_api_key: str = ""
     site_api_url: str = "https://api.radeski.uz"
+    # HMAC secret shared with radeski.uz for the form webhook (empty = webhook disabled)
+    site_webhook_secret: str = ""
+    # optional fallback polling of the site's admin API (empty = disabled)
+    site_admin_username: str = ""
+    site_admin_password: str = ""
+
+    # Celery workers run each job in a fresh event loop: pooled asyncpg connections can't be reused
+    db_null_pool: bool = False
 
     @property
     def is_production(self) -> bool:
