@@ -39,6 +39,8 @@ export interface CallRecord {
   direction: CallDirection
   status: CallStatus
   phone: string | null
+  /** caller id as the PBX saw it (anonymous, foreign); `phone` is set only for valid +998 */
+  caller_raw?: string | null
   patient_id: string | null
   patient_name: string | null
   lead_id: string | null

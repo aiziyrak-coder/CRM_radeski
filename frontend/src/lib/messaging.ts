@@ -28,7 +28,7 @@ export interface ChatMessage {
   id: string
   direction: 'in' | 'out'
   text: string
-  status: 'received' | 'queued' | 'sent' | 'delivered' | 'failed'
+  status: 'received' | 'queued' | 'sending' | 'sent' | 'delivered' | 'failed'
   template_code: string | null
   ai_draft: boolean
   sent_by_name: string | null

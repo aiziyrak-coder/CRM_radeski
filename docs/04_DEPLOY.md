@@ -177,7 +177,7 @@ cd /home/radeski-crm && git pull
 ```
 
 ```bash
-cd /home/radeski-crm && docker compose -f docker-compose.prod.yml up -d --build --no-deps api worker beat
+cd /home/radeski-crm && docker compose -f docker-compose.prod.yml up -d --build --no-deps api worker worker-ai beat
 ```
 
 ```bash
@@ -197,8 +197,8 @@ cd /home/radeski-crm && docker compose -f docker-compose.prod.yml --profile tele
 ```bash
 docker ps -q | wc -l
 ```
-Son 1-qadamdagidan 6 taga ko'p bo'lishi kerak (web, api, worker, beat, db, redis); telefoniya
-yoqilgan bo'lsa 7 ta (+ pbx).
+Son 1-qadamdagidan 7 taga ko'p bo'lishi kerak (web, api, worker, worker-ai, beat, db, redis);
+telefoniya yoqilgan bo'lsa 8 ta (+ pbx).
 
 ```bash
 docker ps -a --filter 'status=exited' --format '{{.Names}}\t{{.Status}}'

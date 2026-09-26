@@ -251,8 +251,9 @@ function Thread({ id }: { id: string }) {
                 {m.template_code && ` · ${t('inbox.template')}`}
                 {m.ai_draft && ' · AI'}
                 {m.error && (
-                  <div className="text-red-700">
-                    {t(`inbox.errors.${m.error}`, { defaultValue: m.error })}
+                  <div className="text-red-700" title={m.error}>
+                    {/* "unexpected: <provider text>" -> the translated "unexpected" */}
+                    {t(`inbox.errors.${m.error.split(':')[0]}`, { defaultValue: m.error })}
                   </div>
                 )}
               </div>

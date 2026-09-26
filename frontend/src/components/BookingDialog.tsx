@@ -86,6 +86,7 @@ export default function BookingDialog({
         dateFrom,
         part: part || undefined,
         limit: lim,
+        excludeAppointmentId: reschedule?.id,
       }),
     onSuccess: () => setChosen(null),
   })

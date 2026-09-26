@@ -53,7 +53,19 @@ services:
       DB_NULL_POOL: "true"
     volumes:
       - radeski_crm_recordings:/recordings
-    command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    command: ["celery", "-A", "app.workers.celery_app", "worker", "-Q", "celery", "--loglevel=INFO", "--concurrency=2"]
+
+  # AI analyses wait on OpenAI (the flex tier can take minutes), so they get their own worker:
+  # messages, reminders and recordings never queue behind them
+  worker-ai:
+    <<: *backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://crm:${DB_PASSWORD:?DB_PASSWORD kerak}@db:5432/crm
+      REDIS_URL: redis://redis:6379/0
+      DB_NULL_POOL: "true"
+    volumes:
+      - radeski_crm_recordings:/recordings
+    command: ["celery", "-A", "app.workers.celery_app", "worker", "-Q", "ai", "-n", "ai@%h", "--loglevel=INFO", "--concurrency=2"]
 
   beat:
     <<: *backend

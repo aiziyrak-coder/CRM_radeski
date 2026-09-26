@@ -179,6 +179,8 @@ export function findSlots(p: {
   dateFrom?: string
   part?: string
   limit?: number
+  /** reschedule: the appointment being moved doesn't block its own course interval */
+  excludeAppointmentId?: string
 }) {
   const qs = new URLSearchParams({ branch_id: p.branchId, limit: String(p.limit ?? 3) })
   p.serviceIds.forEach((id) => qs.append('service_ids', id))
@@ -186,6 +188,7 @@ export function findSlots(p: {
   if (p.patientId) qs.set('patient_id', p.patientId)
   if (p.dateFrom) qs.set('date_from', p.dateFrom)
   if (p.part) qs.set('part', p.part)
+  if (p.excludeAppointmentId) qs.set('exclude_appointment_id', p.excludeAppointmentId)
   return api<Slot[]>(`/appointments/slots?${qs}`)
 }
 

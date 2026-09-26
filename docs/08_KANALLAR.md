@@ -28,7 +28,7 @@
    PUBLIC_URL=https://crm.radeski.uz
    ```
 3. ```bash
-   docker compose -p radeski-crm -f docker-compose.prod.yml up -d --no-deps api worker beat
+   docker compose -p radeski-crm -f docker-compose.prod.yml up -d --no-deps api worker worker-ai beat
    docker compose -p radeski-crm -f docker-compose.prod.yml exec api python -m app.cli telegram-setup
    ```
    “Webhook o'rnatildi … (bot @…)” chiqishi kerak.
@@ -47,6 +47,7 @@ SMS_PROVIDER=eskiz
 ESKIZ_EMAIL=...
 ESKIZ_PASSWORD=...
 ESKIZ_FROM=4546        # tasdiqlangan jo'natuvchi nomi
+ESKIZ_CALLBACK_SECRET=<openssl rand -hex 16>   # yetkazish hisobotlari uchun (bo'sh = hisobot yo'q)
 ```
 
 yoki `SMS_PROVIDER=playmobile` + `PLAYMOBILE_LOGIN/PASSWORD/ORIGINATOR`.
@@ -54,8 +55,10 @@ yoki `SMS_PROVIDER=playmobile` + `PLAYMOBILE_LOGIN/PASSWORD/ORIGINATOR`.
 **Muhim:** O'zbekistonda SMS matni provayderda **moderatsiyadan** o'tadi. Sozlamalardagi
 shablonlar matnini provayderga yuboring, tasdiqlangandan keyin CRM'dagi matn **so'zma-so'z** bir
 xil bo'lishi kerak (o'zgaruvchilar `{sana}`, `{vaqt}` va h.k. provayderda `%w` ko'rinishida
-tasdiqlanadi). Eskiz yetkazish hisobotini `/api/integrations/sms/eskiz` ga yuboradi — xabar
-holati “yetkazildi”ga o'zgaradi.
+tasdiqlanadi). Eskiz yetkazish hisobotini `/api/integrations/sms/eskiz/<ESKIZ_CALLBACK_SECRET>`
+ga yuboradi — xabar holati “yetkazildi”ga o'zgaradi. Bu manzilni Eskiz kabinetiga qo'lda kiritish
+shart emas: CRM uni har bir SMS bilan (`callback_url`) o'zi yuboradi. Maxfiy qism bo'lmasa yoki
+noto'g'ri bo'lsa hisobot rad etiladi (401) — begona odam SMS holatini o'zgartira olmaydi.
 
 ## Instagram Direct
 

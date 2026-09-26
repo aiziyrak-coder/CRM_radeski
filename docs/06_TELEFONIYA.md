@@ -72,7 +72,7 @@ sudo ss -lunp | grep -E ':(5060|170[0-3][0-9])\b' || echo "bo'sh"
 
 ```bash
 docker compose -p radeski-crm -f docker-compose.prod.yml --profile telephony up -d --build pbx
-docker compose -p radeski-crm -f docker-compose.prod.yml up -d --build --no-deps api worker beat web
+docker compose -p radeski-crm -f docker-compose.prod.yml up -d --build --no-deps api worker worker-ai beat web
 docker compose -p radeski-crm -f docker-compose.prod.yml logs --tail 30 pbx
 ```
 

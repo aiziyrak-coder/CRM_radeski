@@ -130,7 +130,7 @@ export default function CallsPage() {
                         )
                       ) : null}
                       <div className="text-xs whitespace-nowrap text-slate-600 tabular-nums">
-                        {c.phone?.startsWith('+998') ? formatPhone(c.phone) : c.phone}
+                        {c.phone ? formatPhone(c.phone) : (c.caller_raw ?? '—')}
                       </div>
                     </td>
                     <td className="py-2 pr-3 text-slate-700">{c.user_name ?? c.extension ?? '—'}</td>

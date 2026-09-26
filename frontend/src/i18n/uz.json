@@ -50,6 +50,13 @@
     "totpCode": "Kod"
   },
   "errors": {
+    "branch_not_found": "Filial topilmadi",
+    "doctor_not_eligible": "Bu shifokor tanlangan xizmatlarni bajarmaydi",
+    "doctor_not_at_branch": "Shifokor bu filialda ishlamaydi",
+    "user_already_linked": "Bu foydalanuvchi boshqa shifokorga bog'langan",
+    "sync_aborted": "Sayt to'liq bo'lmagan ro'yxat qaytardi — katalog o'zgartirilmadi",
+    "appointment_patient_mismatch": "Qabul boshqa bemorga tegishli",
+    "invalid_reference": "Noto'g'ri ma'lumot tanlandi",
     "invalid_credentials": "Login yoki parol noto'g'ri",
     "too_many_attempts": "Juda ko'p urinish. 15 daqiqadan keyin qayta urinib ko'ring.",
     "session_expired": "Sessiya muddati tugadi",
@@ -75,7 +82,9 @@
     "no_device": "Filialda bu xizmat uchun kerakli apparat yo'q",
     "device_busy": "Apparat bu vaqtda band",
     "multiple_devices": "Turli apparat talab qiladigan xizmatlarni bitta qabulga qo'shib bo'lmaydi",
-    "invalid_transition": "Qabulni bu holatga o'tkazib bo'lmaydi",
+    "same_script": "B skript A skriptdan farq qilishi kerak",
+    "campaign_ended": "Kampaniya muddati tugagan — tugash sanasini o'zgartiring",
+    "invalid_transition": "Bu holatga o'tkazib bo'lmaydi",
     "reason_required": "Sababni ko'rsating",
     "not_a_doctor": "Hisobingiz shifokor kartasiga bog'lanmagan. Administratorga murojaat qiling.",
     "doctor_not_found": "Shifokor topilmadi",
@@ -188,6 +197,11 @@
     "next": "Keyingi",
     "total": "Jami: {{count}}",
     "actions": {
+      "auth.totp_locked": "2FA vaqtincha bloklandi (ko'p xato kod)",
+      "catalog.sync_aborted": "Katalog sinxronizatsiyasi to'xtatildi",
+      "patient.timeline": "Bemor tarixi ko'rildi",
+      "schedule.absence_add": "Shifokor ta'tili qo'shildi",
+      "schedule.absence_delete": "Shifokor ta'tili o'chirildi",
       "auth.login": "Tizimga kirdi",
       "auth.login_failed": "Muvaffaqiyatsiz kirish",
       "auth.logout": "Tizimdan chiqdi",
@@ -946,6 +960,7 @@
     "status": {
       "received": "qabul qilindi",
       "queued": "navbatda",
+      "sending": "yuborilmoqda",
       "sent": "yuborildi",
       "delivered": "yetkazildi",
       "failed": "xato"
@@ -953,7 +968,9 @@
     "errors": {
       "telegram_off": "Telegram bot ulanmagan",
       "instagram_off": "Instagram ulanmagan",
-      "sms_off": "SMS provayder ulanmagan"
+      "sms_off": "SMS provayder ulanmagan",
+      "interrupted": "Yuborish uzilib qoldi — bemorga yetgan-yetmaganini tekshiring, kerak bo'lsa qayta yuboring",
+      "unexpected": "Provayder kutilmagan javob qaytardi — xabar yetganini tekshiring"
     }
   },
   "templates": {
