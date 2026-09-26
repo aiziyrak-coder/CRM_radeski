@@ -19,7 +19,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
     path: '/patients',
     labelKey: 'nav.patients',
     roles: ['operator', 'supervisor', 'registrar', 'admin'],
-    soon: true,
   },
   {
     path: '/schedule',

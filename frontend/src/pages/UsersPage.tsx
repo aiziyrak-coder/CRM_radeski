@@ -34,7 +34,12 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
   return (
     <form onSubmit={submit} className="grid gap-4 md:grid-cols-2">
       <Field label={t('users.fullName')}>
-        <Input value={draft.full_name} onChange={(e) => set('full_name', e.target.value)} required minLength={2} />
+        <Input
+          value={draft.full_name}
+          onChange={(e) => set('full_name', e.target.value)}
+          required
+          minLength={2}
+        />
       </Field>
       <Field label={t('users.username')} hint={t('users.usernameHint')}>
         <Input
@@ -97,7 +102,8 @@ function UserRow({ user, isSelf }: { user: User; isSelf: boolean }) {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['users'] }),
   })
   const reset = useMutation({
-    mutationFn: (password: string) => api<void>(`/users/${user.id}/password`, { method: 'POST', body: { password } }),
+    mutationFn: (password: string) =>
+      api<void>(`/users/${user.id}/password`, { method: 'POST', body: { password } }),
     onSuccess: () => {
       setResetting(false)
       setNewPassword('')
@@ -187,7 +193,11 @@ export default function UsersPage() {
   const { t } = useTranslation()
   const { user: me } = useAuth()
   const [adding, setAdding] = useState(false)
-  const { data: users, error, isPending } = useQuery({
+  const {
+    data: users,
+    error,
+    isPending,
+  } = useQuery({
     queryKey: ['users'],
     queryFn: () => api<User[]>('/users'),
   })
@@ -216,7 +226,9 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {users?.map((u) => <UserRow key={u.id} user={u} isSelf={u.id === me?.id} />)}
+              {users?.map((u) => (
+                <UserRow key={u.id} user={u} isSelf={u.id === me?.id} />
+              ))}
             </tbody>
           </table>
         )}

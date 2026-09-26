@@ -1,0 +1,117 @@
+import { api, type Language } from './api'
+
+export type Gender = 'male' | 'female' | 'unknown'
+export type PatientKind = 'active' | 'legacy' | 'cold' | 'lead'
+export type Source =
+  | 'instagram'
+  | 'telegram'
+  | 'google'
+  | 'maps'
+  | 'website'
+  | 'recommendation'
+  | 'advertising'
+  | 'returning'
+  | 'import'
+  | 'cold_base'
+  | 'other'
+
+export const KINDS: PatientKind[] = ['active', 'legacy', 'cold', 'lead']
+export const GENDERS: Gender[] = ['unknown', 'female', 'male']
+/** sources an operator can pick; import / cold_base are set by the importer only */
+export const SOURCES: Source[] = [
+  'instagram',
+  'telegram',
+  'google',
+  'maps',
+  'website',
+  'recommendation',
+  'advertising',
+  'returning',
+  'other',
+]
+
+export type Phone = { id: string; number: string; display: string; is_primary: boolean; note: string | null }
+
+export type PatientListItem = {
+  id: string
+  full_name: string
+  birth_date: string | null
+  district: string | null
+  kind: PatientKind
+  do_not_call: boolean
+  last_visit_at: string | null
+  phones: Phone[]
+}
+
+export type Patient = PatientListItem & {
+  gender: Gender
+  address: string | null
+  language: Language
+  source: Source | null
+  tags: string[]
+  notes: string | null
+  do_not_call_reason: string | null
+  merged_into_id: string | null
+  created_at: string
+}
+
+export type DuplicateCandidate = PatientListItem & { reasons: ('phone' | 'name')[] }
+
+export type PatientInput = {
+  full_name: string
+  birth_date: string | null
+  gender: Gender
+  address: string | null
+  district: string | null
+  language: Language
+  source: Source
+  notes: string | null
+  phones: { number: string; note?: string | null }[]
+}
+
+export function searchPatients(params: {
+  q?: string
+  kind?: PatientKind | ''
+  offset: number
+  limit: number
+}) {
+  const qs = new URLSearchParams({ offset: String(params.offset), limit: String(params.limit) })
+  if (params.q?.trim()) qs.set('q', params.q.trim())
+  if (params.kind) qs.set('kind', params.kind)
+  return api<{ total: number; items: PatientListItem[] }>(`/patients?${qs}`)
+}
+
+export const getPatient = (id: string) => api<Patient>(`/patients/${id}`)
+
+export const createPatient = (body: PatientInput, force = false) =>
+  api<Patient>(`/patients${force ? '?force=true' : ''}`, { method: 'POST', body })
+
+export const updatePatient = (id: string, body: Partial<Omit<PatientInput, 'phones'>>) =>
+  api<Patient>(`/patients/${id}`, { method: 'PATCH', body })
+
+export const addPhone = (id: string, body: { number: string; note?: string | null; is_primary?: boolean }) =>
+  api<Patient>(`/patients/${id}/phones`, { method: 'POST', body })
+
+export const updatePhone = (
+  id: string,
+  phoneId: string,
+  body: { is_primary?: boolean; note?: string | null },
+) => api<Patient>(`/patients/${id}/phones/${phoneId}`, { method: 'PATCH', body })
+
+export const deletePhone = (id: string, phoneId: string) =>
+  api<Patient>(`/patients/${id}/phones/${phoneId}`, { method: 'DELETE' })
+
+export const setDoNotCall = (id: string, doNotCall: boolean, reason: string | null) =>
+  api<Patient>(`/patients/${id}/do-not-call`, { method: 'PUT', body: { do_not_call: doNotCall, reason } })
+
+export const mergePatients = (targetId: string, sourceId: string) =>
+  api<Patient>(`/patients/${targetId}/merge`, { method: 'POST', body: { source_id: sourceId } })
+
+export const getDistricts = () => api<string[]>('/patients/meta/districts')
+
+/** '1985-04-12' -> '12.04.1985' */
+export function formatDate(iso: string | null): string {
+  if (!iso) return '—'
+  const [y, m, d] = iso.slice(0, 10).split('-')
+  return `${d}.${m}.${y}`
+}

@@ -1,5 +1,8 @@
 {
-  "app": { "title": "Radeski CRM", "clinic": "Radeski Skin Clinic" },
+  "app": {
+    "title": "Radeski CRM",
+    "clinic": "Radeski Skin Clinic"
+  },
   "nav": {
     "home": "Bosh sahifa",
     "tasks": "Vazifalar",
@@ -41,7 +44,14 @@
     "wrong_password": "Joriy parol noto'g'ri",
     "validation_error": "Ma'lumotlar noto'g'ri to'ldirilgan",
     "forbidden": "Bu amal uchun ruxsat yo'q",
-    "generic": "Xatolik yuz berdi. Qayta urinib ko'ring."
+    "generic": "Xatolik yuz berdi. Qayta urinib ko'ring.",
+    "invalid_phone": "Telefon raqami noto'g'ri (9 ta raqam kerak, masalan 90 123 45 67)",
+    "invalid_birth_date": "Tug'ilgan sana noto'g'ri",
+    "last_phone": "Bemorda kamida bitta telefon qolishi kerak",
+    "patient_merged": "Bu karta boshqa kartaga birlashtirilgan",
+    "already_merged": "Karta allaqachon birlashtirilgan",
+    "same_patient": "Kartani o'zi bilan birlashtirib bo'lmaydi",
+    "patient_not_found": "Bemor topilmadi"
   },
   "home": {
     "welcome": "Xush kelibsiz, {{name}}",
@@ -101,7 +111,13 @@
       "auth.password_changed": "Parolini o'zgartirdi",
       "user.create": "Foydalanuvchi yaratdi",
       "user.update": "Foydalanuvchini o'zgartirdi",
-      "user.password_reset": "Parolni tikladi"
+      "user.password_reset": "Parolni tikladi",
+      "patient.create": "Bemor yaratdi",
+      "patient.update": "Bemor ma'lumotini o'zgartirdi",
+      "patient.view": "Bemor kartasini ochdi",
+      "patient.phones": "Bemor telefonlarini o'zgartirdi",
+      "patient.do_not_call": "Qo'ng'iroq qilmaslik belgisi",
+      "patient.merge": "Bemor kartalarini birlashtirdi"
     }
   },
   "profile": {
@@ -111,5 +127,82 @@
     "newPassword": "Yangi parol (kamida 8 belgi)",
     "changed": "Parol o'zgartirildi. Boshqa qurilmalardagi sessiyalar yopildi."
   },
-  "lang": { "uz": "O'zbekcha", "ru": "Русский" }
+  "lang": {
+    "uz": "O'zbekcha",
+    "ru": "Русский"
+  },
+  "patients": {
+    "title": "Bemorlar",
+    "search": "Ism yoki telefon bo'yicha qidirish (kirill yoki lotin)",
+    "allKinds": "Barcha turlar",
+    "new": "Yangi bemor",
+    "empty": "Hech narsa topilmadi",
+    "total": "Topildi: {{count}}",
+    "name": "F.I.Sh.",
+    "birthDate": "Tug'ilgan sana",
+    "phone": "Telefon",
+    "phones": "Telefonlar",
+    "district": "Tuman / shahar",
+    "address": "Manzil",
+    "gender": "Jinsi",
+    "language": "Muloqot tili",
+    "source": "Qayerdan bildi",
+    "notes": "Izoh",
+    "kind": "Turi",
+    "lastVisit": "Oxirgi tashrif",
+    "created": "Kartaga kiritilgan",
+    "addPhone": "Raqam qo'shish",
+    "phoneNote": "Kimning raqami (ixtiyoriy)",
+    "makePrimary": "Asosiy qilish",
+    "primary": "Asosiy",
+    "remove": "O'chirish",
+    "save": "Saqlash",
+    "cancel": "Bekor qilish",
+    "edit": "Tahrirlash",
+    "back": "Bemorlar ro'yxati",
+    "dnc": "Qo'ng'iroq qilinmasin",
+    "dncReason": "Sababi",
+    "dncSet": "Qo'ng'iroq qilmaslik belgisini qo'yish",
+    "dncClear": "Belgini olib tashlash",
+    "dncHint": "Bemor boshqa qo'ng'iroq qilmaslikni so'rasa belgilang. U barcha kampaniyalardan chiqariladi.",
+    "history": "Tarix",
+    "historySoon": "Yozuvlar, qo'ng'iroqlar va vazifalar tarixi keyingi bosqichlarda shu yerda ko'rinadi.",
+    "dupTitle": "Bazada o'xshash bemor bor",
+    "dupText": "Bu bemor allaqachon bazada bo'lishi mumkin. Avval tekshiring: to'g'ri bemor bo'lsa, uning kartasini oching.",
+    "dupPhone": "telefon bir xil",
+    "dupName": "ism va sana o'xshash",
+    "open": "Kartani ochish",
+    "createAnyway": "Baribir yangi karta yaratish",
+    "merge": "Dublikatni birlashtirish",
+    "mergeHint": "Boshqa kartani shu kartaga qo'shing: telefonlar va bo'sh maydonlar shu yerga o'tadi, u karta yopiladi.",
+    "mergeSearch": "Birlashtiriladigan kartani qidiring",
+    "mergeConfirm": "\"{{name}}\" kartasini shu kartaga birlashtirasizmi? Bu amalni qaytarib bo'lmaydi.",
+    "merged": "Karta birlashtirildi",
+    "mergedRedirect": "Bu karta boshqa kartaga birlashtirilgan — asosiy kartaga o'tildi.",
+    "details": "Ma'lumotlar"
+  },
+  "kinds": {
+    "active": "Faol bemor",
+    "legacy": "Eski baza",
+    "cold": "Sovuq baza",
+    "lead": "Murojaat qilgan"
+  },
+  "genders": {
+    "unknown": "Ko'rsatilmagan",
+    "female": "Ayol",
+    "male": "Erkak"
+  },
+  "sources": {
+    "instagram": "Instagram",
+    "telegram": "Telegram",
+    "google": "Google",
+    "maps": "Xarita (2GIS, Yandex)",
+    "website": "Sayt",
+    "recommendation": "Tavsiya",
+    "advertising": "Reklama",
+    "returning": "Qayta bemor",
+    "import": "Eski bazadan import",
+    "cold_base": "Sovuq baza",
+    "other": "Boshqa"
+  }
 }

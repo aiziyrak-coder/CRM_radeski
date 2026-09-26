@@ -5,6 +5,8 @@ import { useAuth } from './lib/auth-context'
 import { NAV_ITEMS, type NavItem } from './lib/navigation'
 import AuditPage from './pages/AuditPage'
 import HomePage from './pages/HomePage'
+import PatientCardPage from './pages/PatientCardPage'
+import PatientsPage from './pages/PatientsPage'
 import LoginPage from './pages/LoginPage'
 import ProfilePage from './pages/ProfilePage'
 import SoonPage from './pages/SoonPage'
@@ -15,7 +17,13 @@ const PAGES: Record<string, ReactNode> = {
   '/users': <UsersPage />,
   '/audit': <AuditPage />,
   '/profile': <ProfilePage />,
+  '/patients': <PatientsPage />,
 }
+
+// detail pages inherit the roles of their menu section
+const DETAIL_ROUTES: { path: string; section: string; element: ReactNode }[] = [
+  { path: '/patients/:id', section: '/patients', element: <PatientCardPage /> },
+]
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { status } = useAuth()
@@ -25,10 +33,10 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return children
 }
 
-function Guarded({ item }: { item: NavItem }) {
+function Guarded({ item, children }: { item: NavItem; children?: ReactNode }) {
   const { user } = useAuth()
   if (!user || !item.roles.includes(user.role)) return <Navigate to="/" replace />
-  return PAGES[item.path] ?? <SoonPage labelKey={item.labelKey} />
+  return children ?? PAGES[item.path] ?? <SoonPage labelKey={item.labelKey} />
 }
 
 export default function App() {
@@ -45,6 +53,13 @@ export default function App() {
         >
           {NAV_ITEMS.map((item) => (
             <Route key={item.path} path={item.path} element={<Guarded item={item} />} />
+          ))}
+          {DETAIL_ROUTES.map((r) => (
+            <Route
+              key={r.path}
+              path={r.path}
+              element={<Guarded item={NAV_ITEMS.find((i) => i.path === r.section)!}>{r.element}</Guarded>}
+            />
           ))}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

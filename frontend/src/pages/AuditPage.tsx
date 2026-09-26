@@ -86,7 +86,9 @@ export default function AuditPage() {
                   {new Date(item.created_at).toLocaleString(locale)}
                 </td>
                 <td className="py-2 pr-4">{item.user_name ?? t('audit.system')}</td>
-                <td className="py-2 pr-4">{t(`audit.actions.${item.action}`, { defaultValue: item.action })}</td>
+                <td className="py-2 pr-4">
+                  {t(`audit.actions.${item.action}`, { defaultValue: item.action })}
+                </td>
                 <td className="py-2 pr-4 text-slate-600">{describeChange(item)}</td>
                 <td className="py-2 text-xs text-slate-500">{item.ip}</td>
               </tr>

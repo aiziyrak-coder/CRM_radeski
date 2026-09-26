@@ -1,14 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import i18n from '../i18n'
-import {
-  api,
-  refreshSession,
-  setAccessToken,
-  setSessionHandlers,
-  type TokenResponse,
-  type User,
-} from './api'
+import { api, refreshSession, setAccessToken, setSessionHandlers, type TokenResponse, type User } from './api'
 import { AuthContext, type LogoutReason, type Status } from './auth-context'
 
 // TZ 5: the session closes after 30 minutes without user activity

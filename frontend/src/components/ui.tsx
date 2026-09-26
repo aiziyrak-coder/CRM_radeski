@@ -51,7 +51,15 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} className={cx(control, props.className)} />
 }
 
-export function Card({ title, actions, children }: { title?: string; actions?: ReactNode; children: ReactNode }) {
+export function Card({
+  title,
+  actions,
+  children,
+}: {
+  title?: string
+  actions?: ReactNode
+  children: ReactNode
+}) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white">
       {(title || actions) && (
@@ -65,14 +73,22 @@ export function Card({ title, actions, children }: { title?: string; actions?: R
   )
 }
 
-export function Badge({ tone = 'neutral', children }: { tone?: 'neutral' | 'good' | 'bad' | 'info'; children: ReactNode }) {
+export function Badge({
+  tone = 'neutral',
+  children,
+}: {
+  tone?: 'neutral' | 'good' | 'bad' | 'info'
+  children: ReactNode
+}) {
   const styles = {
     neutral: 'bg-slate-100 text-slate-700',
     good: 'bg-emerald-50 text-emerald-700',
     bad: 'bg-red-50 text-red-700',
     info: 'bg-amber-50 text-amber-800',
   }[tone]
-  return <span className={cx('inline-block rounded px-2 py-0.5 text-xs font-medium', styles)}>{children}</span>
+  return (
+    <span className={cx('inline-block rounded px-2 py-0.5 text-xs font-medium', styles)}>{children}</span>
+  )
 }
 
 export function ErrorText({ error }: { error: unknown }) {

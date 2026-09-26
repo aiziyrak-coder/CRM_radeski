@@ -4,11 +4,14 @@
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
+  /** full error body, e.g. duplicate candidates on 409 */
+  readonly data: Record<string, unknown>
 
-  constructor(status: number, code: string) {
+  constructor(status: number, code: string, data: Record<string, unknown> = {}) {
     super(code)
     this.status = status
     this.code = code
+    this.data = data
   }
 }
 
@@ -43,24 +46,28 @@ export function setAccessToken(token: string | null) {
   accessToken = token
 }
 
-export function setSessionHandlers(handlers: {
-  expired: () => void
-  refreshed: (t: TokenResponse) => void
-}) {
+export function setSessionHandlers(handlers: { expired: () => void; refreshed: (t: TokenResponse) => void }) {
   onSessionExpired = handlers.expired
   onTokenRefreshed = handlers.refreshed
 }
 
 async function parseError(resp: Response): Promise<ApiError> {
   let code = `http_${resp.status}`
+  let data: Record<string, unknown> = {}
   try {
-    const body = await resp.json()
-    if (typeof body?.detail === 'string') code = body.detail
-    else if (Array.isArray(body?.detail)) code = 'validation_error'
+    data = await resp.json()
+    if (typeof data?.detail === 'string') code = data.detail
+    else if (Array.isArray(data?.detail)) {
+      // pydantic: "Value error, invalid_phone" -> "invalid_phone"
+      const custom = (data.detail as { msg?: string }[])
+        .map((d) => d.msg?.match(/^Value error, ([a-z_]+)$/)?.[1])
+        .find(Boolean)
+      code = custom ?? 'validation_error'
+    }
   } catch {
     // non-JSON error body
   }
-  return new ApiError(resp.status, code)
+  return new ApiError(resp.status, code, data)
 }
 
 async function doRefresh(): Promise<TokenResponse | null> {

@@ -14,7 +14,9 @@ _settings = get_settings()
 
 
 class Base(DeclarativeBase):
-    pass
+    # fetch server-generated values (created_at, updated_at) via RETURNING on INSERT *and* UPDATE,
+    # so reading them after a flush never triggers lazy IO (not allowed with asyncio)
+    __mapper_args__ = {"eager_defaults": True}
 
 
 def str_enum(enum_cls: type[enum.StrEnum], length: int = 32) -> Enum:
