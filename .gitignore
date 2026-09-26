@@ -1,0 +1,13 @@
+# Real patient data — never commit
+data/
+*.xlsx
+*.xls
+!docs/**/*.xlsx
+
+.env
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+dist/
+.pytest_cache/
