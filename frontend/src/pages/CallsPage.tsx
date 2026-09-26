@@ -8,6 +8,7 @@ import RecordingPlayer from '../components/RecordingPlayer'
 import { CallButton } from '../components/Softphone'
 import { Badge, Card, ErrorText, Field, Input, Select } from '../components/ui'
 import { useAuth } from '../lib/auth-context'
+import { canOpen } from '../lib/navigation'
 import { formatPhone } from '../lib/patients'
 import { clinicDate, clinicTime } from '../lib/scheduling'
 import { CALL_STATUSES, formatDuration, getCalls, type CallRecord } from '../lib/telephony'
@@ -107,16 +108,26 @@ export default function CallsPage() {
                     <td className="py-2 pr-3">{t(`calls.dir.${c.direction}`)}</td>
                     <td className="py-2 pr-3">
                       {c.patient_id ? (
-                        <Link
-                          to={`/patients/${c.patient_id}`}
-                          className="font-medium text-teal-800 hover:underline"
-                        >
-                          <PatientName name={c.patient_name ?? '—'} />
-                        </Link>
+                        canOpen(user?.role, '/patients') ? (
+                          <Link
+                            to={`/patients/${c.patient_id}`}
+                            className="font-medium text-teal-800 hover:underline"
+                          >
+                            <PatientName name={c.patient_name ?? '—'} />
+                          </Link>
+                        ) : (
+                          <span className="font-medium">
+                            <PatientName name={c.patient_name ?? '—'} />
+                          </span>
+                        )
                       ) : c.lead_id ? (
-                        <Link to="/leads" className="text-teal-800 hover:underline">
-                          {t('calls.lead')}
-                        </Link>
+                        canOpen(user?.role, '/leads') ? (
+                          <Link to="/leads" className="text-teal-800 hover:underline">
+                            {t('calls.lead')}
+                          </Link>
+                        ) : (
+                          <span>{t('calls.lead')}</span>
+                        )
                       ) : null}
                       <div className="text-xs whitespace-nowrap text-slate-600 tabular-nums">
                         {c.phone?.startsWith('+998') ? formatPhone(c.phone) : c.phone}

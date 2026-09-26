@@ -2,7 +2,12 @@
   "app": {
     "title": "Radeski CRM",
     "clinic": "Radeski Skin Clinic",
-    "loading": "Загрузка…"
+    "loading": "Загрузка…",
+    "close": "Закрыть",
+    "menu": "Меню",
+    "remove": "Удалить",
+    "prev": "Назад",
+    "next": "Вперёд"
   },
   "nav": {
     "home": "Главная",
@@ -92,7 +97,21 @@
     "ai_disabled": "AI не подключён (OPENAI_API_KEY)",
     "ai_failed": "AI не смог ответить, попробуйте ещё раз",
     "invalid_code": "Код неверный или устарел — введите новый код из приложения",
-    "challenge_expired": "Время истекло, введите логин и пароль заново"
+    "challenge_expired": "Время истекло, введите логин и пароль заново",
+    "extension_taken": "Этот внутренний номер уже закреплён за другим пользователем",
+    "from_after_to": "Дата начала не может быть позже даты окончания",
+    "bad_period": "Неверный период (не больше 1 года)",
+    "timezone_required": "Не указан часовой пояс",
+    "phone_not_found": "Номер телефона не найден",
+    "template_not_found": "Шаблон не найден",
+    "conversation_not_found": "Диалог не найден",
+    "analysis_not_found": "Анализ не найден",
+    "call_not_found": "Звонок не найден",
+    "criterion_not_found": "Критерий не найден",
+    "recording_not_found": "Запись не найдена",
+    "user_not_found": "Пользователь не найден",
+    "not_authenticated": "Войдите в систему заново",
+    "ai_budget_exceeded": "Дневной лимит AI исчерпан, попробуйте завтра"
   },
   "home": {
     "welcome": "Добро пожаловать, {{name}}",
@@ -116,6 +135,7 @@
     "trunk": "Транк Uztelecom",
     "ai": "AI (OpenAI)",
     "lastCall": "последний звонок: {{at}}",
+    "aiSpend": "сегодня ${{spent}} / ${{budget}}",
     "problems": {
       "recordings_failed_one": "{{count}} запись не сконвертирована в MP3 (проверьте логи worker)",
       "recordings_failed_few": "{{count}} записи не сконвертированы в MP3",
@@ -204,7 +224,10 @@
       "lead.update": "Изменил обращение",
       "script.update": "Изменил скрипт",
       "campaign.create": "Создал кампанию",
-      "campaign.status": "Статус кампании"
+      "campaign.status": "Статус кампании",
+      "auth.totp_enrolled": "Включил двухэтапный вход",
+      "auth.totp_failed": "Неверный код подтверждения",
+      "user.totp_reset": "Сбросил двухэтапный вход"
     }
   },
   "profile": {
@@ -681,7 +704,8 @@
     "save": "Сохранить",
     "saved": "Сохранено",
     "hint": "Подстановки: [Ism] — оператор, [Bemor], [sana], [vaqt], [shifokor], [xizmat]",
-    "open": "Открыть скрипт"
+    "open": "Открыть скрипт",
+    "formatHint": "**жирный** · _курсив_"
   },
   "homeOps": {
     "tasks": "Задачи на сегодня",
@@ -750,7 +774,17 @@
       "RTP Timeout": "звук прервался",
       "SIP Failure Code": "ошибка сети оператора",
       "Address Incomplete": "неполный номер",
-      "Authentication Error": "ошибка авторизации"
+      "Authentication Error": "ошибка авторизации",
+      "Redirected": "звонок переадресован",
+      "Expires": "время ожидания истекло",
+      "No ACK": "нет подтверждения",
+      "Dialog Error": "ошибка диалога",
+      "Bad Media Description": "неверные параметры звука",
+      "Missing SDP": "нет параметров звука",
+      "Incompatible SDP": "несовместимый формат звука",
+      "WebRTC Error": "ошибка звука в браузере",
+      "Internal Error": "внутренняя ошибка",
+      "Terminated": "звонок прерван"
     },
     "dismiss": "Закрыть",
     "scripts": "Скрипт или ответ на возражение…"
@@ -792,6 +826,8 @@
   },
   "ai": {
     "title": "Контроль качества (AI)",
+    "spend": "Расход AI за сегодня: ${{spent}} (дневной лимит ${{budget}})",
+    "budgetReached": "Лимит исчерпан — анализ продолжится завтра",
     "disabled": "AI ещё не подключён: в .env пустой OPENAI_API_KEY. Звонки записываются и будут проанализированы после добавления ключа (последние 7 дней).",
     "tabs": {
       "overview": "Обзор",
@@ -878,7 +914,14 @@
     "suggestion": "Вывод AI (по записи звонка)",
     "noOutcome": "Результат неясен",
     "confirm": "Подтвердить",
-    "edit": "Исправить"
+    "edit": "Исправить",
+    "errors": {
+      "too_short": "Разговор слишком короткий для анализа",
+      "no_speech": "В записи не распознана речь",
+      "budget": "Дневной лимит AI исчерпан — повтор завтра",
+      "disabled": "AI не подключён",
+      "generic": "Не удалось проанализировать"
+    }
   },
   "inbox": {
     "title": "Чаты",

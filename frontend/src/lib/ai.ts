@@ -4,6 +4,8 @@ export interface AiStatus {
   enabled: boolean
   stt_model: string
   llm_model: string
+  spent_today_usd: number
+  daily_budget_usd: number
 }
 
 export interface TranscriptSegment {

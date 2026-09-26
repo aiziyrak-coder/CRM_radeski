@@ -195,7 +195,8 @@ export default function SchedulePage() {
   })
   const branchId = params.get('branch') ?? branches.find((b) => b.is_main)?.id ?? branches[0]?.id ?? ''
   const [booking, setBooking] = useState<{ doctorId?: string; time?: string } | null>(null)
-  const [opened, setOpened] = useState<Appointment | null>(null)
+  // only the id: the panel shows the appointment from the refreshed day, not a stale snapshot
+  const [openedId, setOpenedId] = useState<string | null>(null)
 
   const set = (key: string, value: string) =>
     setParams((prev) => {
@@ -217,6 +218,8 @@ export default function SchedulePage() {
   })
   const appointments = day.data ?? []
   const active = appointments.filter((a) => !['cancelled', 'rescheduled'].includes(a.status))
+  const opened = openedId ? appointments.find((a) => a.id === openedId) : undefined
+  const open = (a: Appointment) => setOpenedId(a.id)
 
   return (
     <div className="space-y-4">
@@ -227,7 +230,11 @@ export default function SchedulePage() {
 
       <Card>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" onClick={() => set('date', addDays(date, -1))} aria-label="prev">
+          <Button
+            variant="secondary"
+            onClick={() => set('date', addDays(date, -1))}
+            aria-label={t('app.prev')}
+          >
             ←
           </Button>
           <Input
@@ -236,7 +243,11 @@ export default function SchedulePage() {
             onChange={(e) => e.target.value && set('date', e.target.value)}
             className="w-40"
           />
-          <Button variant="secondary" onClick={() => set('date', addDays(date, 1))} aria-label="next">
+          <Button
+            variant="secondary"
+            onClick={() => set('date', addDays(date, 1))}
+            aria-label={t('app.next')}
+          >
             →
           </Button>
           <Button variant="ghost" onClick={() => set('date', clinicDate())}>
@@ -272,7 +283,7 @@ export default function SchedulePage() {
       <ErrorText error={columns.error ?? day.error} />
       <Card>
         {view === 'list' ? (
-          <List appointments={appointments} onOpen={setOpened} />
+          <List appointments={appointments} onOpen={open} />
         ) : columns.data && columns.data.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-500">{t('schedule.noDoctors')}</p>
         ) : (
@@ -281,7 +292,7 @@ export default function SchedulePage() {
             appointments={appointments}
             date={date}
             onSlot={(doctorId, time) => setBooking({ doctorId, time })}
-            onOpen={setOpened}
+            onOpen={open}
           />
         )}
       </Card>
@@ -294,7 +305,7 @@ export default function SchedulePage() {
           onClose={() => setBooking(null)}
         />
       )}
-      {opened && <AppointmentPanel a={opened} onClose={() => setOpened(null)} />}
+      {opened && <AppointmentPanel a={opened} onClose={() => setOpenedId(null)} />}
     </div>
   )
 }

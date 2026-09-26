@@ -16,6 +16,7 @@ import {
   type QaCriterion,
 } from '../lib/ai'
 import { useAuth } from '../lib/auth-context'
+import { canOpen } from '../lib/navigation'
 import { formatDate, formatDateTime } from '../lib/patients'
 import { addDays, clinicDate } from '../lib/scheduling'
 
@@ -138,11 +139,14 @@ function Calls({ from, to, userId }: { from: string; to: string; userId: string 
                 <span className="text-xs text-slate-500 tabular-nums">{formatDateTime(c.started_at)}</span>
                 <span>{t(`calls.dir.${c.direction}`)}</span>
                 <span className="text-slate-600">{c.user_name ?? '—'}</span>
-                {c.patient_id && (
-                  <Link to={`/patients/${c.patient_id}`} className="text-teal-800 hover:underline">
+                {c.patient_id &&
+                  (canOpen(user?.role, '/patients') ? (
+                    <Link to={`/patients/${c.patient_id}`} className="text-teal-800 hover:underline">
+                      <PatientName name={c.patient_name ?? '—'} />
+                    </Link>
+                  ) : (
                     <PatientName name={c.patient_name ?? '—'} />
-                  </Link>
-                )}
+                  ))}
                 {c.red_flags.map((f) => (
                   <Badge key={f} tone={c.flags_reviewed ? 'neutral' : 'bad'}>
                     {t(`ai.flags.${f}`)}
@@ -343,6 +347,17 @@ export default function QaPage() {
     <div className="max-w-6xl space-y-4">
       <h1 className="text-2xl font-semibold">{t('ai.title')}</h1>
       {status && !status.enabled && <Notice>{t('ai.disabled')}</Notice>}
+      {status?.enabled && (
+        <p className="text-xs text-slate-500">
+          {t('ai.spend', {
+            spent: status.spent_today_usd.toFixed(3),
+            budget: status.daily_budget_usd,
+          })}
+          {status.daily_budget_usd > 0 && status.spent_today_usd >= status.daily_budget_usd && (
+            <span className="ml-2 font-medium text-amber-800">{t('ai.budgetReached')}</span>
+          )}
+        </p>
+      )}
       <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200">
         {(['overview', 'calls', 'criteria', 'digest'] as const).map((k) => (
           <button

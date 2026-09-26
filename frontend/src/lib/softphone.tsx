@@ -1,9 +1,9 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UA } from 'jssip'
 import type { RTCSession } from 'jssip/lib/RTCSession'
-import type { RTCSessionEvent } from 'jssip/lib/UA'
+import type { RTCSessionEvent, UnRegisteredEvent } from 'jssip/lib/UA'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useAuth } from './auth-context'
+import { ACTIVITY_EVENT, useAuth } from './auth-context'
 import { SoftphoneContext, type ActiveCall, type PhoneStatus, type Softphone } from './softphone-context'
 import { dialable, getSoftphone } from './telephony'
 
@@ -11,6 +11,9 @@ const CALL_CENTER = ['operator', 'supervisor', 'admin']
 const MEDIA = { mediaConstraints: { audio: true, video: false } }
 // the PBX has a public address; no STUN/TURN round trips are needed
 const PC_CONFIG = { pcConfig: { iceServers: [] } }
+// re-REGISTER after a failure (PBX restart, rotated secret): 5 s, 10 s, 30 s, then every minute
+const RETRY_DELAYS_MS = [5_000, 10_000, 30_000, 60_000]
+const AUTH_FAILED = [401, 403, 407]
 
 /** Two-tone ring for an incoming call, made with WebAudio (no sound file to ship). */
 function startRinging(): () => void {
@@ -39,9 +42,11 @@ function startRinging(): () => void {
 
 export function SoftphoneProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const userId = user?.id
   const allowed = Boolean(user && CALL_CENTER.includes(user.role))
   const { data: creds } = useQuery({
-    queryKey: ['softphone', user?.id],
+    queryKey: ['softphone', userId],
     queryFn: getSoftphone,
     enabled: allowed,
     staleTime: Infinity,
@@ -109,6 +114,8 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
     let agent: UA | null = null
     let cancelled = false
+    let retryTimer: number | undefined
+    let failures = 0
     // JsSIP is loaded only for users who actually have a softphone
     void import('jssip').then(({ UA, WebSocketInterface }) => {
       if (cancelled) return
@@ -122,9 +129,27 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
         user_agent: 'Radeski CRM',
       })
       agent.on('connecting', () => setStatus('connecting'))
-      agent.on('registered', () => setStatus('registered'))
+      agent.on('registered', () => {
+        failures = 0
+        window.clearTimeout(retryTimer)
+        setStatus('registered')
+      })
       agent.on('unregistered', () => setStatus('offline'))
-      agent.on('registrationFailed', () => setStatus('offline'))
+      agent.on('registrationFailed', (e: UnRegisteredEvent) => {
+        setStatus('offline')
+        const code = e.response?.status_code
+        if ((code && AUTH_FAILED.includes(code)) || e.cause === 'Authentication Error') {
+          // the SIP password may have been rotated: fetch fresh credentials (a new one restarts the UA)
+          void queryClient.invalidateQueries({ queryKey: ['softphone', userId] })
+        }
+        const delay = RETRY_DELAYS_MS[Math.min(failures, RETRY_DELAYS_MS.length - 1)]
+        failures += 1
+        window.clearTimeout(retryTimer)
+        retryTimer = window.setTimeout(() => {
+          // while disconnected JsSIP reconnects the socket itself and registers on connect
+          if (!cancelled && agent?.isConnected() && !agent.isRegistered()) agent.register()
+        }, delay)
+      })
       agent.on('disconnected', () => setStatus('offline'))
       agent.on('newRTCSession', (e: RTCSessionEvent) => {
         if (e.originator !== 'remote') return // outgoing sessions are attached in dial()
@@ -139,11 +164,25 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     })
     return () => {
       cancelled = true
+      window.clearTimeout(retryTimer)
       session.current?.terminate()
       agent?.stop()
       ua.current = null
     }
-  }, [enabled, extension, password, attach])
+  }, [enabled, extension, password, attach, queryClient, userId])
+
+  // a phone call is activity: the idle logout must not end the session mid-call
+  const inCall = call !== null
+  useEffect(() => {
+    if (!inCall) return
+    const ping = () => window.dispatchEvent(new Event(ACTIVITY_EVENT))
+    ping()
+    const timer = window.setInterval(ping, 30_000)
+    return () => {
+      window.clearInterval(timer)
+      ping() // the idle window starts when the call ends
+    }
+  }, [inCall])
 
   const value = useMemo<Softphone>(() => {
     const current = () => session.current

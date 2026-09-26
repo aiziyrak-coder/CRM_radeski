@@ -1,4 +1,5 @@
 import { api, type Language } from './api'
+import { clinicDate } from './scheduling'
 
 export type Gender = 'male' | 'female' | 'unknown'
 export type PatientKind = 'active' | 'legacy' | 'cold' | 'lead'
@@ -115,6 +116,8 @@ export interface TimelineEvent {
   user: string | null
   ref: string | null
   seconds: number | null
+  /** phone: who handled the call (decides whether an operator may play the recording) */
+  user_id?: string | null
 }
 
 export const getTimeline = (id: string, lang: Language) =>
@@ -153,10 +156,11 @@ export const TAG_LABELS: Record<string, string> = {
   ismsiz: 'patients.tagNoName',
 }
 
-/** '1985-04-12' -> '12.04.1985' */
+/** '1985-04-12' -> '12.04.1985'; a timestamp gives its day in the clinic time zone, not UTC */
 export function formatDate(iso: string | null): string {
   if (!iso) return '—'
-  const [y, m, d] = iso.slice(0, 10).split('-')
+  const day = iso.length > 10 ? clinicDate(iso) : iso
+  const [y, m, d] = day.split('-')
   return `${d}.${m}.${y}`
 }
 

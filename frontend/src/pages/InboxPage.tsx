@@ -190,7 +190,7 @@ function Thread({ id }: { id: string }) {
     (c.channel === 'instagram' && status && !status.instagram) ||
     (c.channel === 'sms' && status && !status.sms)
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && text.trim()) send.mutate()
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && text.trim() && !send.isPending) send.mutate()
   }
   return (
     <Card>

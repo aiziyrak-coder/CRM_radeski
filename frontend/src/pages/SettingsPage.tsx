@@ -112,7 +112,7 @@ function WeeklyEditor({
             <Button
               variant="ghost"
               onClick={() => setRows(rows.filter((_, j) => j !== i))}
-              aria-label="remove"
+              aria-label={t('app.remove')}
             >
               ✕
             </Button>
@@ -153,6 +153,9 @@ function DoctorEditor({ doctor, isAdmin }: { doctor: Doctor; isAdmin: boolean })
     queryFn: () => getDoctorSchedule(doctor.id),
   })
   const [absence, setAbsence] = useState({ date_from: '', date_to: '', reason: '' })
+  // the colour picker fires on every drag step; keep it local and save when the field is left
+  const [color, setColor] = useState(doctor.color ?? '#0f766e')
+  const badRange = Boolean(absence.date_from && absence.date_to && absence.date_from > absence.date_to)
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['schedule', doctor.id] })
@@ -188,6 +191,7 @@ function DoctorEditor({ doctor, isAdmin }: { doctor: Doctor; isAdmin: boolean })
                   <input
                     type="checkbox"
                     checked={doctor.specialties.includes(s)}
+                    disabled={saveDoctor.isPending}
                     onChange={(e) =>
                       saveDoctor.mutate({
                         specialties: e.target.checked
@@ -204,8 +208,11 @@ function DoctorEditor({ doctor, isAdmin }: { doctor: Doctor; isAdmin: boolean })
           <Field label={t('settings.color')}>
             <Input
               type="color"
-              value={doctor.color ?? '#0f766e'}
-              onChange={(e) => saveDoctor.mutate({ color: e.target.value })}
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              onBlur={() => {
+                if (color !== (doctor.color ?? '#0f766e')) saveDoctor.mutate({ color })
+              }}
               className="h-10 w-20 p-1"
             />
           </Field>
@@ -230,7 +237,7 @@ function DoctorEditor({ doctor, isAdmin }: { doctor: Doctor; isAdmin: boolean })
 
       {schedule.data && (
         <WeeklyEditor
-          key={schedule.dataUpdatedAt}
+          key={doctor.id}
           doctorId={doctor.id}
           initial={schedule.data.rows.map((r) => ({
             ...r,
@@ -247,7 +254,13 @@ function DoctorEditor({ doctor, isAdmin }: { doctor: Doctor; isAdmin: boolean })
           {schedule.data?.absences.map((a) => (
             <li key={a.id} className="flex items-center gap-2">
               {a.date_from} — {a.date_to} {a.reason && <span className="text-slate-500">({a.reason})</span>}
-              <Button variant="ghost" className="px-2 py-0.5 text-xs" onClick={() => delAbs.mutate(a.id)}>
+              <Button
+                variant="ghost"
+                className="px-2 py-0.5 text-xs"
+                disabled={delAbs.isPending}
+                onClick={() => delAbs.mutate(a.id)}
+                aria-label={t('app.remove')}
+              >
                 ✕
               </Button>
             </li>
@@ -277,13 +290,14 @@ function DoctorEditor({ doctor, isAdmin }: { doctor: Doctor; isAdmin: boolean })
           </Field>
           <Button
             variant="secondary"
-            disabled={!absence.date_from || !absence.date_to || addAbs.isPending}
+            disabled={!absence.date_from || !absence.date_to || badRange || addAbs.isPending}
             onClick={() => addAbs.mutate()}
           >
             {t('settings.addAbsence')}
           </Button>
         </div>
-        <ErrorText error={addAbs.error} />
+        {badRange && <p className="text-sm text-red-700">{t('errors.from_after_to')}</p>}
+        <ErrorText error={addAbs.error ?? delAbs.error} />
       </div>
     </div>
   )

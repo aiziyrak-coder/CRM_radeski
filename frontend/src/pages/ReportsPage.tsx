@@ -2,9 +2,8 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Card, ErrorText, Field, Input, Select } from '../components/ui'
-import { api, type User } from '../lib/api'
 import { useAuth } from '../lib/auth-context'
-import { downloadKpi, getDaily, getKpi, type CallStats } from '../lib/ops'
+import { downloadKpi, getDaily, getKpi, getReportOperators, type CallStats } from '../lib/ops'
 import { addDays, clinicDate } from '../lib/scheduling'
 
 function Stat({ label, value, hint }: { label: string; value: string | number | null; hint?: string }) {
@@ -16,6 +15,9 @@ function Stat({ label, value, hint }: { label: string; value: string | number | 
     </div>
   )
 }
+
+// roles the backend lets list operators for the report filter
+const PICKS_OPERATOR = ['supervisor', 'owner', 'admin']
 
 const pct = (v: number | null) => (v === null ? null : `${v}%`)
 
@@ -54,11 +56,12 @@ function Daily() {
   const { user } = useAuth()
   const [date, setDate] = useState(clinicDate())
   const [userId, setUserId] = useState('')
-  const isManager = user?.role !== 'operator'
+  const isManager = PICKS_OPERATOR.includes(user?.role ?? '')
   const { data: users = [] } = useQuery({
-    queryKey: ['users'],
-    queryFn: () => api<User[]>('/users'),
-    enabled: user?.role === 'admin',
+    queryKey: ['reports', 'operators'],
+    queryFn: getReportOperators,
+    enabled: isManager,
+    staleTime: 300_000,
   })
   const { data, error } = useQuery({
     queryKey: ['reports', 'daily', date, userId],
@@ -79,13 +82,11 @@ function Daily() {
           <Field label={t('reports.operator')}>
             <Select value={userId} onChange={(e) => setUserId(e.target.value)} className="w-64">
               <option value="">{t('reports.allOperators')}</option>
-              {users
-                .filter((u) => u.role === 'operator' || u.role === 'supervisor')
-                .map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.full_name}
-                  </option>
-                ))}
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name}
+                </option>
+              ))}
             </Select>
           </Field>
         )}

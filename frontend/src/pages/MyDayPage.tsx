@@ -17,7 +17,7 @@ import {
 const UNIT_DAYS = { days: 1, weeks: 7, months: 30 } as const
 
 function RecommendationForm({ a }: { a: Appointment }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [amount, setAmount] = useState(2)
   const [unit, setUnit] = useState<keyof typeof UNIT_DAYS>('weeks')
   const [serviceId, setServiceId] = useState(a.services[0]?.service_id ?? '')
@@ -72,7 +72,7 @@ function RecommendationForm({ a }: { a: Appointment }) {
             <option value="">—</option>
             {a.services.map((s) => (
               <option key={s.service_id} value={s.service_id}>
-                {s.name_uz}
+                {i18n.language === 'ru' ? s.name_ru : s.name_uz}
               </option>
             ))}
           </Select>

@@ -2,7 +2,12 @@
   "app": {
     "title": "Radeski CRM",
     "clinic": "Radeski Skin Clinic",
-    "loading": "Yuklanmoqda…"
+    "loading": "Yuklanmoqda…",
+    "close": "Yopish",
+    "menu": "Menyu",
+    "remove": "Olib tashlash",
+    "prev": "Oldingi",
+    "next": "Keyingi"
   },
   "nav": {
     "home": "Bosh sahifa",
@@ -92,7 +97,21 @@
     "ai_disabled": "AI ulanmagan (OPENAI_API_KEY)",
     "ai_failed": "AI javob bera olmadi, qayta urinib ko'ring",
     "invalid_code": "Kod noto'g'ri yoki eskirgan — ilovadagi yangi kodni kiriting",
-    "challenge_expired": "Vaqt tugadi, qaytadan login va parolni kiriting"
+    "challenge_expired": "Vaqt tugadi, qaytadan login va parolni kiriting",
+    "extension_taken": "Bu ichki raqam boshqa foydalanuvchiga biriktirilgan",
+    "from_after_to": "Boshlanish sanasi tugash sanasidan keyin bo'lmasligi kerak",
+    "bad_period": "Davr noto'g'ri (ko'pi bilan 1 yil)",
+    "timezone_required": "Vaqt mintaqasi ko'rsatilmagan",
+    "phone_not_found": "Telefon raqami topilmadi",
+    "template_not_found": "Shablon topilmadi",
+    "conversation_not_found": "Suhbat topilmadi",
+    "analysis_not_found": "Tahlil topilmadi",
+    "call_not_found": "Qo'ng'iroq topilmadi",
+    "criterion_not_found": "Mezon topilmadi",
+    "recording_not_found": "Yozuv topilmadi",
+    "user_not_found": "Foydalanuvchi topilmadi",
+    "not_authenticated": "Tizimga qayta kiring",
+    "ai_budget_exceeded": "Bugungi AI limiti tugadi, ertaga qayta urinib ko'ring"
   },
   "home": {
     "welcome": "Xush kelibsiz, {{name}}",
@@ -116,6 +135,7 @@
     "trunk": "Uztelecom trunk",
     "ai": "AI (OpenAI)",
     "lastCall": "oxirgi qo'ng'iroq: {{at}}",
+    "aiSpend": "bugun ${{spent}} / ${{budget}}",
     "problems": {
       "recordings_failed_one": "{{count}} ta yozuv MP3 ga aylanmadi (worker loglarini tekshiring)",
       "recordings_failed_other": "{{count}} ta yozuv MP3 ga aylanmadi (worker loglarini tekshiring)",
@@ -196,7 +216,10 @@
       "lead.update": "Murojaatni o'zgartirdi",
       "script.update": "Skriptni tahrirladi",
       "campaign.create": "Kampaniya yaratdi",
-      "campaign.status": "Kampaniya holati"
+      "campaign.status": "Kampaniya holati",
+      "auth.totp_enrolled": "Ikki bosqichli kirishni yoqdi",
+      "auth.totp_failed": "Tasdiqlash kodi noto'g'ri",
+      "user.totp_reset": "Ikki bosqichli kirishni bekor qildi"
     }
   },
   "profile": {
@@ -671,7 +694,8 @@
     "save": "Saqlash",
     "saved": "Saqlandi",
     "hint": "O'rinlar: [Ism] — operator, [Bemor], [sana], [vaqt], [shifokor], [xizmat]",
-    "open": "Skriptni ochish"
+    "open": "Skriptni ochish",
+    "formatHint": "**qalin** · _kursiv_"
   },
   "homeOps": {
     "tasks": "Bugungi vazifalar",
@@ -738,7 +762,17 @@
       "RTP Timeout": "ovoz uzildi",
       "SIP Failure Code": "operator tarmog'i xatosi",
       "Address Incomplete": "raqam to'liq emas",
-      "Authentication Error": "kirish xatosi"
+      "Authentication Error": "kirish xatosi",
+      "Redirected": "qo'ng'iroq boshqa raqamga yo'naltirildi",
+      "Expires": "kutish vaqti tugadi",
+      "No ACK": "tasdiq kelmadi",
+      "Dialog Error": "suhbat xatosi",
+      "Bad Media Description": "ovoz parametrlari xato",
+      "Missing SDP": "ovoz parametrlari kelmadi",
+      "Incompatible SDP": "ovoz formati mos kelmadi",
+      "WebRTC Error": "brauzer ovoz xatosi",
+      "Internal Error": "ichki xato",
+      "Terminated": "qo'ng'iroq uzildi"
     },
     "dismiss": "Yopish",
     "scripts": "Skript yoki e'tirozga javob…"
@@ -780,6 +814,8 @@
   },
   "ai": {
     "title": "Sifat nazorati (AI)",
+    "spend": "Bugungi AI xarajati: ${{spent}} (kunlik chegara ${{budget}})",
+    "budgetReached": "Chegara tugadi — tahlillar ertaga davom etadi",
     "disabled": "AI hali ulanmagan: .env faylida OPENAI_API_KEY bo'sh. Qo'ng'iroqlar yozib olinadi va kalit qo'shilgach tahlil qilinadi (oxirgi 7 kun).",
     "tabs": {
       "overview": "Umumiy",
@@ -866,7 +902,14 @@
     "suggestion": "AI xulosasi (qo'ng'iroq yozuvidan)",
     "noOutcome": "Natija aniq emas",
     "confirm": "Tasdiqlash",
-    "edit": "Tuzatish"
+    "edit": "Tuzatish",
+    "errors": {
+      "too_short": "Suhbat tahlil uchun juda qisqa",
+      "no_speech": "Yozuvda nutq aniqlanmadi",
+      "budget": "Bugungi AI limiti tugadi — ertaga qayta uriniladi",
+      "disabled": "AI ulanmagan",
+      "generic": "Tahlil qilib bo'lmadi"
+    }
   },
   "inbox": {
     "title": "Chatlar",

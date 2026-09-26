@@ -59,7 +59,8 @@ export default function BookingDialog({
 
   const [patient, setPatient] = useState<PatientListItem | null>(initialPatient ?? null)
   const [services, setServices] = useState<ServiceItem[]>([])
-  const [branch, setBranch] = useState(branchId ?? reschedule?.branch_id ?? '')
+  // a reschedule keeps the original branch (the backend moves only time and doctor)
+  const [branch, setBranch] = useState(reschedule?.branch_id ?? branchId ?? '')
   const [doctor, setDoctor] = useState(doctorId ?? reschedule?.doctor_id ?? '')
   const [part, setPart] = useState('')
   const [dateFrom, setDateFrom] = useState(at?.date ?? clinicDate())
@@ -88,10 +89,21 @@ export default function BookingDialog({
       }),
     onSuccess: () => setChosen(null),
   })
+  /** any change to what the slots were searched for drops the found slots and the choice */
+  const refilter =
+    <T,>(set: (v: T) => void) =>
+    (v: T) => {
+      set(v)
+      setChosen(null)
+      setLimit(3)
+      slots.reset()
+    }
 
   const done = (a: Appointment) => {
     void queryClient.invalidateQueries({ queryKey: ['appointments'] })
     void queryClient.invalidateQueries({ queryKey: ['patient'] })
+    void queryClient.invalidateQueries({ queryKey: ['tasks'] })
+    void queryClient.invalidateQueries({ queryKey: ['leads'] })
     onDone?.(a)
   }
   const submit = useMutation({
@@ -146,17 +158,21 @@ export default function BookingDialog({
         ) : (
           <>
             <Field label={t('booking.patient')}>
-              <PatientPicker value={patient} onChange={setPatient} />
+              <PatientPicker value={patient} onChange={refilter(setPatient)} />
             </Field>
             <Field label={t('booking.services')}>
-              <ServicePicker value={services} onChange={setServices} />
+              <ServicePicker value={services} onChange={refilter(setServices)} />
             </Field>
           </>
         )}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label={t('schedule.branch')}>
-            <Select value={effectiveBranch} onChange={(e) => setBranch(e.target.value)}>
+            <Select
+              value={effectiveBranch}
+              onChange={(e) => refilter(setBranch)(e.target.value)}
+              disabled={Boolean(reschedule)}
+            >
               {branches
                 .filter((b) => b.is_active)
                 .map((b) => (
@@ -167,7 +183,7 @@ export default function BookingDialog({
             </Select>
           </Field>
           <Field label={t('booking.doctor')}>
-            <Select value={doctor} onChange={(e) => setDoctor(e.target.value)}>
+            <Select value={doctor} onChange={(e) => refilter(setDoctor)(e.target.value)}>
               <option value="">{t('booking.anyDoctor')}</option>
               {doctors.map((d) => (
                 <option key={d.id} value={d.id}>
@@ -181,7 +197,7 @@ export default function BookingDialog({
               type="date"
               value={dateFrom}
               min={clinicDate()}
-              onChange={(e) => setDateFrom(e.target.value)}
+              onChange={(e) => refilter(setDateFrom)(e.target.value)}
             />
           </Field>
           {manual ? (
@@ -190,7 +206,7 @@ export default function BookingDialog({
             </Field>
           ) : (
             <Field label={t('booking.part')}>
-              <Select value={part} onChange={(e) => setPart(e.target.value)}>
+              <Select value={part} onChange={(e) => refilter(setPart)(e.target.value)}>
                 <option value="">{t('booking.anyTime')}</option>
                 <option value="morning">{t('booking.morning')}</option>
                 <option value="afternoon">{t('booking.afternoon')}</option>

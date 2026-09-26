@@ -17,6 +17,8 @@ type SystemStatus = {
     trunk: boolean
     last_call_at: string | null
     ai: boolean
+    ai_spent_today_usd: number
+    ai_daily_budget_usd: number
     telegram: boolean
     instagram: boolean
     sms: string | null
@@ -157,7 +159,18 @@ function SystemHealth() {
               }
             />
             <Row label={t('health.trunk')} ok={i.trunk} />
-            <Row label={t('health.ai')} ok={i.ai} />
+            <Row
+              label={t('health.ai')}
+              ok={i.ai}
+              detail={
+                i.ai
+                  ? t('health.aiSpend', {
+                      spent: i.ai_spent_today_usd.toFixed(3),
+                      budget: i.ai_daily_budget_usd,
+                    })
+                  : undefined
+              }
+            />
             <Row label="Telegram" ok={i.telegram} />
             <Row label="Instagram" ok={i.instagram} />
             <Row label="SMS" ok={Boolean(i.sms)} detail={i.sms ?? undefined} />

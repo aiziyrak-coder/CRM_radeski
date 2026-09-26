@@ -191,7 +191,7 @@ function UserRow({ user, isSelf, extensions }: { user: User; isSelf: boolean; ex
           )}
         </td>
       </tr>
-      {(resetting || update.error || reset.isSuccess) && (
+      {(resetting || update.error || resetTotp.error || reset.isSuccess) && (
         <tr>
           <td colSpan={5} className="pb-3">
             {resetting && (
@@ -217,7 +217,7 @@ function UserRow({ user, isSelf, extensions }: { user: User; isSelf: boolean; ex
                 </Button>
               </form>
             )}
-            <ErrorText error={update.error ?? reset.error} />
+            <ErrorText error={update.error ?? reset.error ?? resetTotp.error} />
             {reset.isSuccess && !resetting && <Notice>{t('users.passwordReset')}</Notice>}
           </td>
         </tr>

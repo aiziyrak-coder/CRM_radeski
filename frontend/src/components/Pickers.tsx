@@ -105,7 +105,7 @@ export function ServicePicker({
             >
               {serviceName(s, i18n.language)}
               <button
-                aria-label="remove"
+                aria-label={t('app.remove')}
                 className="text-teal-700"
                 onClick={() => onChange(value.filter((x) => x.id !== s.id))}
               >

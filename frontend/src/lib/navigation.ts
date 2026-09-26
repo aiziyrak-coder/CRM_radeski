@@ -43,3 +43,8 @@ export const ROLES: readonly Role[] = ALL
 export function navFor(role: Role): NavItem[] {
   return NAV_ITEMS.filter((item) => item.roles.includes(role))
 }
+
+/** Whether a link to this menu section (or a detail page under it) would open for the role. */
+export function canOpen(role: Role | undefined, path: string): boolean {
+  return Boolean(role && NAV_ITEMS.find((item) => item.path === path)?.roles.includes(role))
+}

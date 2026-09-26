@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import { useAuth } from '../lib/auth-context'
 import { createLead, fillScript, getScripts, leadPatient } from '../lib/ops'
-import { formatDateTime, formatPhone, getPatient } from '../lib/patients'
+import { UNKNOWN_NAME, formatDateTime, formatPhone, getPatient } from '../lib/patients'
 import { useSoftphone, type PhoneStatus } from '../lib/softphone-context'
 import { formatDuration, lookupCaller } from '../lib/telephony'
 import BookingDialog from './BookingDialog'
@@ -107,7 +107,11 @@ function Caller({ number }: { number: string }) {
   })
   const newLead = useMutation({
     mutationFn: () => createLead({ phone: number, channel: 'call' }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['telephony', 'lookup', number] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['telephony', 'lookup', number] })
+      void queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      void queryClient.invalidateQueries({ queryKey: ['leads'] })
+    },
   })
   if (!data) return null
   if (data.patient) {
@@ -143,16 +147,19 @@ function Caller({ number }: { number: string }) {
     )
   }
   return (
-    <div className="flex items-center gap-2 text-sm">
-      <span className="text-slate-600">{t('phone.unknownCaller')}</span>
-      <Button
-        variant="secondary"
-        className="px-2 py-1 text-xs"
-        disabled={newLead.isPending}
-        onClick={() => newLead.mutate()}
-      >
-        {t('phone.newLead')}
-      </Button>
+    <div className="text-sm">
+      <div className="flex items-center gap-2">
+        <span className="text-slate-600">{t('phone.unknownCaller')}</span>
+        <Button
+          variant="secondary"
+          className="px-2 py-1 text-xs"
+          disabled={newLead.isPending}
+          onClick={() => newLead.mutate()}
+        >
+          {t('phone.newLead')}
+        </Button>
+      </div>
+      <ErrorText error={newLead.error} />
     </div>
   )
 }
@@ -160,11 +167,22 @@ function Caller({ number }: { number: string }) {
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#']
 
 /** During the call: any script at hand (objections, price, medical questions) and booking. */
-function CallAssistant({ number }: { number: string }) {
+function CallAssistant({
+  number,
+  createdPatientId,
+  onCreated,
+  onBook,
+}: {
+  number: string
+  /** patient made from this caller's lead earlier in the call: Book again must not make another */
+  createdPatientId: string | null
+  onCreated: (patientId: string) => void
+  onBook: (patientId: string) => void
+}) {
   const { t, i18n } = useTranslation()
   const { user } = useAuth()
+  const queryClient = useQueryClient()
   const [code, setCode] = useState('')
-  const [booking, setBooking] = useState<string | null>(null)
   const lang = i18n.language === 'ru' ? 'ru' : 'uz'
   const { data: scripts = [] } = useQuery({
     queryKey: ['scripts'],
@@ -176,19 +194,22 @@ function CallAssistant({ number }: { number: string }) {
     queryFn: () => lookupCaller(number),
     enabled: number.replace(/\D/g, '').length >= 9,
   })
-  const patient = useQuery({
-    queryKey: ['patient', booking],
-    queryFn: () => getPatient(booking!),
-    enabled: Boolean(booking),
-  })
   const book = useMutation({
     mutationFn: async () => {
       if (caller?.patient) return caller.patient.id
+      if (createdPatientId) return createdPatientId
       const lead = caller?.lead ?? (await createLead({ phone: number, channel: 'call' }))
-      return (await leadPatient(lead.id)).patient_id
+      const { patient_id } = await leadPatient(lead.id)
+      onCreated(patient_id)
+      void queryClient.invalidateQueries({ queryKey: ['telephony', 'lookup', number] })
+      void queryClient.invalidateQueries({ queryKey: ['tasks'] })
+      void queryClient.invalidateQueries({ queryKey: ['leads'] })
+      return patient_id
     },
-    onSuccess: setBooking,
+    onSuccess: onBook,
   })
+  const callerName = caller?.patient?.full_name
+  const patientName = callerName === UNKNOWN_NAME ? t('patients.tagNoName') : callerName
   const script = scripts.find((s) => s.code === code && s.language === lang)
   return (
     <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
@@ -221,13 +242,12 @@ function CallAssistant({ number }: { number: string }) {
           <ScriptBody
             body={fillScript(script.body, {
               Ism: user?.full_name.split(' ')[0],
-              Bemor: caller?.patient?.full_name,
+              Bemor: patientName,
             })}
           />
         </div>
       )}
       <ErrorText error={book.error} />
-      {booking && patient.data && <BookingDialog patient={patient.data} onClose={() => setBooking(null)} />}
     </div>
   )
 }
@@ -237,75 +257,102 @@ export function CallPanel() {
   const { t } = useTranslation()
   const phone = useSoftphone()
   const [keypad, setKeypad] = useState(false)
+  // kept here, not in CallAssistant (mounted only while the call is active),
+  // so the booking dialog stays open after the hang-up until the user closes it
+  const [booking, setBooking] = useState<string | null>(null)
+  const [created, setCreated] = useState<{ number: string; patientId: string } | null>(null)
+  const bookingPatient = useQuery({
+    queryKey: ['patient', booking],
+    queryFn: () => getPatient(booking!),
+    enabled: Boolean(booking),
+  })
   const call = phone.call
+  const dialog =
+    booking && bookingPatient.data ? (
+      <BookingDialog patient={bookingPatient.data} onClose={() => setBooking(null)} />
+    ) : null
   if (!call && phone.error) {
     return (
-      <div
-        className="fixed right-4 bottom-4 z-50 w-80 rounded-lg border border-red-200 bg-white p-4 shadow-xl"
-        role="alert"
-      >
-        <p className="text-sm text-red-800">
-          {t('phone.failed', { cause: t(`phone.causes.${phone.error}`, { defaultValue: phone.error }) })}
-        </p>
-        <Button variant="secondary" className="mt-2 px-2 py-1 text-xs" onClick={phone.clearError}>
-          {t('phone.dismiss')}
-        </Button>
-      </div>
+      <>
+        {dialog}
+        <div
+          className="fixed right-4 bottom-4 z-50 w-80 rounded-lg border border-red-200 bg-white p-4 shadow-xl"
+          role="alert"
+        >
+          <p className="text-sm text-red-800">
+            {t('phone.failed', { cause: t(`phone.causes.${phone.error}`, { defaultValue: phone.error }) })}
+          </p>
+          <Button variant="secondary" className="mt-2 px-2 py-1 text-xs" onClick={phone.clearError}>
+            {t('phone.dismiss')}
+          </Button>
+        </div>
+      </>
     )
   }
-  if (!call) return null
+  if (!call) return dialog
   const ringing = call.state === 'ringing'
+  const number = call.number
   return (
-    <div
-      className={`fixed right-4 bottom-4 z-50 w-80 rounded-lg border bg-white p-4 shadow-xl ${ringing ? 'border-emerald-400 ring-4 ring-emerald-100' : 'border-slate-200'}`}
-      role="dialog"
-      aria-live="assertive"
-    >
-      <div className="flex items-center justify-between text-xs text-slate-500">
-        <span>
-          {t(call.direction === 'incoming' ? 'phone.incoming' : 'phone.outgoing')} ·{' '}
-          {t(`phone.state.${call.held ? 'held' : call.state}`)}
-        </span>
-        {call.startedAt && <Elapsed since={call.startedAt} />}
-      </div>
-      <div className="mt-1 text-lg font-semibold tabular-nums">{display(call.number)}</div>
-      <div className="mt-2">
-        <Caller number={call.number} />
-      </div>
-      {call.state === 'active' && <CallAssistant number={call.number} />}
-      {keypad && call.state === 'active' && (
-        <div className="mt-3 grid grid-cols-3 gap-1">
-          {KEYS.map((k) => (
-            <Button key={k} variant="secondary" className="py-1" onClick={() => phone.dtmf(k)}>
-              {k}
-            </Button>
-          ))}
+    <>
+      {dialog}
+      <div
+        className={`fixed right-4 bottom-4 z-50 w-80 rounded-lg border bg-white p-4 shadow-xl ${ringing ? 'border-emerald-400 ring-4 ring-emerald-100' : 'border-slate-200'}`}
+        role="dialog"
+        aria-live="assertive"
+      >
+        <div className="flex items-center justify-between text-xs text-slate-500">
+          <span>
+            {t(call.direction === 'incoming' ? 'phone.incoming' : 'phone.outgoing')} ·{' '}
+            {t(`phone.state.${call.held ? 'held' : call.state}`)}
+          </span>
+          {call.startedAt && <Elapsed since={call.startedAt} />}
         </div>
-      )}
-      <div className="mt-3 flex flex-wrap gap-2">
-        {ringing && call.direction === 'incoming' && (
-          <Button className="flex-1" onClick={phone.answer}>
-            {t('phone.answer')}
-          </Button>
-        )}
+        <div className="mt-1 text-lg font-semibold tabular-nums">{display(call.number)}</div>
+        <div className="mt-2">
+          <Caller number={call.number} />
+        </div>
         {call.state === 'active' && (
-          <>
-            <Button variant="secondary" onClick={phone.toggleMute}>
-              {t(call.muted ? 'phone.unmute' : 'phone.mute')}
-            </Button>
-            <Button variant="secondary" onClick={phone.toggleHold}>
-              {t(call.held ? 'phone.resume' : 'phone.hold')}
-            </Button>
-            <Button variant="secondary" onClick={() => setKeypad(!keypad)}>
-              #
-            </Button>
-          </>
+          <CallAssistant
+            number={number}
+            createdPatientId={created?.number === number ? created.patientId : null}
+            onCreated={(patientId) => setCreated({ number, patientId })}
+            onBook={setBooking}
+          />
         )}
-        <Button variant="danger" className="flex-1" onClick={phone.hangup}>
-          {t(ringing && call.direction === 'incoming' ? 'phone.reject' : 'phone.hangup')}
-        </Button>
+        {keypad && call.state === 'active' && (
+          <div className="mt-3 grid grid-cols-3 gap-1">
+            {KEYS.map((k) => (
+              <Button key={k} variant="secondary" className="py-1" onClick={() => phone.dtmf(k)}>
+                {k}
+              </Button>
+            ))}
+          </div>
+        )}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {ringing && call.direction === 'incoming' && (
+            <Button className="flex-1" onClick={phone.answer}>
+              {t('phone.answer')}
+            </Button>
+          )}
+          {call.state === 'active' && (
+            <>
+              <Button variant="secondary" onClick={phone.toggleMute}>
+                {t(call.muted ? 'phone.unmute' : 'phone.mute')}
+              </Button>
+              <Button variant="secondary" onClick={phone.toggleHold}>
+                {t(call.held ? 'phone.resume' : 'phone.hold')}
+              </Button>
+              <Button variant="secondary" onClick={() => setKeypad(!keypad)}>
+                #
+              </Button>
+            </>
+          )}
+          <Button variant="danger" className="flex-1" onClick={phone.hangup}>
+            {t(ringing && call.direction === 'incoming' ? 'phone.reject' : 'phone.hangup')}
+          </Button>
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 

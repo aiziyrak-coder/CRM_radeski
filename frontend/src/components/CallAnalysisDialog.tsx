@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { formatAt, getCallAnalysis, markFlagsReviewed, type CallAnalysis } from '../lib/ai'
+import { getScripts } from '../lib/ops'
 import { recordingUrl } from '../lib/telephony'
 import { Badge, Button, ErrorText, Modal } from './ui'
 
@@ -46,6 +47,14 @@ function useSeekableRecording(callId: string) {
   return { seek, player, error }
 }
 
+/** Why an analysis was skipped or failed: the worker stores a code or a raw exception message. */
+function errorKey(error: string): string {
+  if (error === 'too_short' || error === 'no_speech') return error
+  if (/budget/i.test(error)) return 'budget'
+  if (/OPENAI_API_KEY/.test(error)) return 'disabled'
+  return 'generic'
+}
+
 function At({ at, onSeek }: { at: number | null; onSeek: (at: number | null) => void }) {
   if (at === null) return null
   return (
@@ -63,21 +72,35 @@ function Body({ a, canAck }: { a: CallAnalysis; canAck: boolean }) {
     mutationFn: () => markFlagsReviewed(a.call_id),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['ai'] }),
   })
+  const { data: scripts = [] } = useQuery({
+    queryKey: ['scripts'],
+    queryFn: () => getScripts(),
+    staleTime: 600_000,
+    enabled: Boolean(a.conversation_type),
+  })
   if (a.status !== 'ready') {
     return (
       <p className="text-sm text-slate-600">
         {t(`ai.status.${a.status}`)}
-        {a.error && <span className="block text-xs text-red-700">{a.error}</span>}
+        {a.error && (
+          <span className="block text-xs text-red-700" title={a.error}>
+            {t(`ai.errors.${errorKey(a.error)}`)}
+          </span>
+        )}
       </p>
     )
   }
+  const lang = i18n.language === 'ru' ? 'ru' : 'uz'
+  const conversation =
+    scripts.find((s) => s.code === a.conversation_type && s.language === lang) ??
+    scripts.find((s) => s.code === a.conversation_type)
   const criterionName = (code: string) => t(`ai.criteria.${code}`, { defaultValue: code })
   return (
     <div className="space-y-4 text-sm">
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-3xl font-semibold tabular-nums">{a.score ?? '—'}</span>
         <span className="text-slate-500">/ 100</span>
-        {a.conversation_type && <Badge tone="info">{a.conversation_type}</Badge>}
+        {a.conversation_type && <Badge tone="info">{conversation?.title ?? a.conversation_type}</Badge>}
         {a.suggested_outcome && <Badge>{t(`outcomes.${a.suggested_outcome}`)}</Badge>}
         {a.review && <Badge tone="good">{t(`ai.review.${a.review}`)}</Badge>}
       </div>
@@ -107,6 +130,7 @@ function Body({ a, canAck }: { a: CallAnalysis; canAck: boolean }) {
             )}
             {a.flags_reviewed_at && <span className="text-xs text-slate-500">{t('ai.reviewed')}</span>}
           </div>
+          <ErrorText error={ack.error} />
           <ul className="space-y-1">
             {a.red_flags!.map((f, i) => (
               <li key={i}>

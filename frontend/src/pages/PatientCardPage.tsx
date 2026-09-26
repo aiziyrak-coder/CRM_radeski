@@ -11,6 +11,7 @@ import RecordingPlayer from '../components/RecordingPlayer'
 import { CallButton } from '../components/Softphone'
 import PatientRow from '../components/PatientRow'
 import { Badge, Button, Card, ErrorText, Field, Input, Notice } from '../components/ui'
+import type { User } from '../lib/api'
 import { useAuth } from '../lib/auth-context'
 import { openSms } from '../lib/messaging'
 import { categoryName, getCategories } from '../lib/diagnoses'
@@ -120,8 +121,19 @@ const KIND_STYLE: Record<TimelineKind, string> = {
   recommendation: 'bg-violet-500',
 }
 
+// backend telephony/router.py: managers hear every recording, an operator only their own calls
+const LISTENERS = ['supervisor', 'owner', 'admin']
+
+function canListen(e: TimelineEvent, me: User | null): boolean {
+  if (!me) return false
+  if (LISTENERS.includes(me.role)) return true
+  if (me.role !== 'operator') return false
+  return e.user_id ? e.user_id === me.id : Boolean(e.user) && e.user === me.full_name
+}
+
 function EventLine({ e }: { e: TimelineEvent }) {
   const { t } = useTranslation()
+  const { user } = useAuth()
   switch (e.kind) {
     case 'appointment':
       return (
@@ -166,7 +178,7 @@ function EventLine({ e }: { e: TimelineEvent }) {
           {e.seconds ? <span className="text-slate-600"> · {formatDuration(e.seconds)}</span> : null}
           {e.user && <span className="text-xs text-slate-500"> · {e.user}</span>}
           {e.detail && <div className="text-slate-600">{e.detail}</div>}
-          {e.ref && (
+          {e.ref && canListen(e, user) && (
             <div className="mt-1">
               <RecordingPlayer callId={e.ref} />
             </div>
@@ -448,6 +460,7 @@ function DoNotCall({ patient }: { patient: Patient }) {
 
 function Merge({ patient }: { patient: Patient }) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const setPatient = useSetPatient(patient.id)
   const [q, setQ] = useState('')
   const { data } = useQuery({
@@ -460,6 +473,10 @@ function Merge({ patient }: { patient: Patient }) {
     onSuccess: (p) => {
       setPatient(p)
       setQ('')
+      // the merged card's visits, calls and messages now belong to this one
+      // (the ['appointments'] prefix covers this patient's timeline too)
+      void queryClient.invalidateQueries({ queryKey: ['appointments', 'timeline', patient.id] })
+      void queryClient.invalidateQueries({ queryKey: ['appointments'] })
     },
   })
   const candidates = data?.items.filter((p) => p.id !== patient.id) ?? []

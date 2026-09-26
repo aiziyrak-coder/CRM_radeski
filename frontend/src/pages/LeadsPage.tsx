@@ -18,6 +18,8 @@ import {
 } from '../lib/ops'
 import { SOURCES, formatDateTime, formatPhone, getPatient, type Source } from '../lib/patients'
 
+const PAGE = 50 // the backend's page size for /leads
+
 function NewLead({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -125,10 +127,16 @@ function LeadRow({ lead }: { lead: Lead }) {
     queryFn: () => getPatient(bookFor!),
     enabled: Boolean(bookFor),
   })
-  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['leads'] })
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['leads'] })
+    void queryClient.invalidateQueries({ queryKey: ['tasks'] })
+  }
   const markLost = useMutation({
     mutationFn: () => updateLead(lead.id, { stage: 'lost', lost_reason: reason }),
-    onSuccess: refresh,
+    onSuccess: () => {
+      setLost(false)
+      refresh()
+    },
   })
   const book = useMutation({
     mutationFn: () => leadPatient(lead.id),
@@ -222,7 +230,15 @@ function LeadRow({ lead }: { lead: Lead }) {
               <Button variant="danger" disabled={markLost.isPending} onClick={() => markLost.mutate()}>
                 {t('leads.markLost')}
               </Button>
+              <ErrorText error={markLost.error} />
             </div>
+          </td>
+        </tr>
+      )}
+      {book.error && (
+        <tr>
+          <td colSpan={7} className="pb-2 text-right">
+            <ErrorText error={book.error} />
           </td>
         </tr>
       )}
@@ -249,9 +265,15 @@ export default function LeadsPage() {
   const [stage, setStage] = useState('')
   const [channel, setChannel] = useState('')
   const [q, setQ] = useState('')
+  const [offset, setOffset] = useState(0)
+  // a new filter starts from the first page
+  const filter = (set: (v: string) => void) => (v: string) => {
+    set(v)
+    setOffset(0)
+  }
   const { data, error } = useQuery({
-    queryKey: ['leads', stage, channel, q],
-    queryFn: () => getLeads({ stage, channel, q }),
+    queryKey: ['leads', stage, channel, q, offset],
+    queryFn: () => getLeads({ stage, channel, q, offset }),
     placeholderData: keepPreviousData,
     refetchInterval: 30_000,
   })
@@ -268,10 +290,10 @@ export default function LeadsPage() {
             type="search"
             placeholder={t('leads.search')}
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => filter(setQ)(e.target.value)}
             className="md:flex-1"
           />
-          <Select value={stage} onChange={(e) => setStage(e.target.value)} className="md:w-52">
+          <Select value={stage} onChange={(e) => filter(setStage)(e.target.value)} className="md:w-52">
             <option value="">{t('leads.allStages')}</option>
             {LEAD_STAGES.map((s) => (
               <option key={s} value={s}>
@@ -279,7 +301,7 @@ export default function LeadsPage() {
               </option>
             ))}
           </Select>
-          <Select value={channel} onChange={(e) => setChannel(e.target.value)} className="md:w-52">
+          <Select value={channel} onChange={(e) => filter(setChannel)(e.target.value)} className="md:w-52">
             <option value="">{t('leads.allChannels')}</option>
             {LEAD_CHANNELS.map((c) => (
               <option key={c} value={c}>
@@ -312,6 +334,27 @@ export default function LeadsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {data && data.total > 0 && (
+          <div className="mt-4 flex items-center justify-between text-sm text-slate-600">
+            <span>{t('audit.total', { count: data.total })}</span>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                disabled={offset === 0}
+                onClick={() => setOffset(Math.max(0, offset - PAGE))}
+              >
+                {t('audit.prev')}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={offset + PAGE >= data.total}
+                onClick={() => setOffset(offset + PAGE)}
+              >
+                {t('audit.next')}
+              </Button>
+            </div>
           </div>
         )}
       </Card>

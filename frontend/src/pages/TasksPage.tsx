@@ -24,8 +24,8 @@ import {
   type Task,
   type TaskType,
 } from '../lib/ops'
-import { formatDateTime, formatPhone, getPatient } from '../lib/patients'
-import { clinicDate, clinicTime } from '../lib/scheduling'
+import { UNKNOWN_NAME, formatDate, formatDateTime, formatPhone, getPatient } from '../lib/patients'
+import { clinicTime } from '../lib/scheduling'
 
 const TYPES: TaskType[] = [
   'missed_call',
@@ -207,15 +207,18 @@ function TaskCard({ task }: { task: Task }) {
     queryFn: () => getPatient(booking!.patientId),
     enabled: Boolean(booking),
   })
-  const startBooking = async () => {
-    const patientId = task.patient_id ?? (task.lead_id ? (await leadPatient(task.lead_id)).patient_id : null)
-    if (patientId) setBooking({ patientId })
-  }
+  const startBooking = useMutation({
+    mutationFn: async () =>
+      task.patient_id ?? (task.lead_id ? (await leadPatient(task.lead_id)).patient_id : null),
+    onSuccess: (patientId) => {
+      if (patientId) setBooking({ patientId })
+    },
+  })
 
   const scriptValues = {
     Ism: user?.full_name.split(' ')[0],
-    Bemor: task.patient_name,
-    sana: task.appointment_at ? clinicDate(task.appointment_at) : undefined,
+    Bemor: task.patient_name === UNKNOWN_NAME ? t('patients.tagNoName') : task.patient_name,
+    sana: task.appointment_at ? formatDate(task.appointment_at) : undefined,
     vaqt: task.appointment_at ? clinicTime(task.appointment_at) : undefined,
   }
   return (
@@ -262,7 +265,12 @@ function TaskCard({ task }: { task: Task }) {
           <CallButton number={task.patient_phone} taskId={task.id} />
           <ScriptButton code={task.script_code} language={task.patient_language} values={scriptValues} />
           {task.type !== 'confirm_visit' && task.type !== 'post_procedure' && (
-            <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => void startBooking()}>
+            <Button
+              variant="secondary"
+              className="px-2 py-1 text-xs"
+              disabled={startBooking.isPending}
+              onClick={() => startBooking.mutate()}
+            >
               {t('tasks.book')}
             </Button>
           )}
@@ -271,12 +279,20 @@ function TaskCard({ task }: { task: Task }) {
           </Button>
         </div>
       </div>
+      <ErrorText error={startBooking.error} />
       {task.ai_suggestion && !open && (
         <AiSuggestionBox task={task} onEdit={() => setOpen(true)} onDone={refresh} />
       )}
       {open && (
         <div className="mt-3">
-          <ResultForm task={task} onDone={refresh} />
+          <ResultForm
+            task={task}
+            onDone={() => {
+              // a second click must not record a second attempt
+              setOpen(false)
+              refresh()
+            }}
+          />
         </div>
       )}
       {booking && patientForBooking.data && (

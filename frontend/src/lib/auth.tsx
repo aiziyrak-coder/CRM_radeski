@@ -10,11 +10,12 @@ import {
   type TotpChallenge,
   type User,
 } from './api'
-import { AuthContext, type LogoutReason, type Status } from './auth-context'
+import { ACTIVITY_EVENT, AuthContext, type LogoutReason, type Status } from './auth-context'
 
 // TZ 5: the session closes after 30 minutes without user activity
 const IDLE_LIMIT_MS = 30 * 60 * 1000
-const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'touchstart', 'wheel'] as const
+// ACTIVITY_EVENT: the softphone pings it during a call, so nobody is logged out mid-conversation
+const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'touchstart', 'wheel', ACTIVITY_EVENT] as const
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()

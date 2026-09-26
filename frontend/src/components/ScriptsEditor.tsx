@@ -26,7 +26,9 @@ function Editor({ script }: { script: Script }) {
           value={body}
           onChange={(e) => setBody(e.target.value)}
         />
-        <p className="text-xs text-slate-500">{t('scripts.hint')} · **qalin** · _kursiv_</p>
+        <p className="text-xs text-slate-500">
+          {t('scripts.hint')} · {t('scripts.formatHint')}
+        </p>
         <div className="flex items-center gap-2">
           <Button disabled={save.isPending || !title.trim() || !body.trim()} onClick={() => save.mutate()}>
             {t('scripts.save')}

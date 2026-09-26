@@ -2,6 +2,9 @@ import { createContext, useContext } from 'react'
 import type { TotpChallenge, User } from './api'
 
 export type Status = 'loading' | 'authenticated' | 'anonymous'
+
+/** Window event that counts as user activity for the idle logout (e.g. an ongoing phone call). */
+export const ACTIVITY_EVENT = 'crm:activity'
 export type LogoutReason = 'manual' | 'expired' | 'idle'
 
 export type AuthContextValue = {

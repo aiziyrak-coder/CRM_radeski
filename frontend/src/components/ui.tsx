@@ -119,13 +119,14 @@ export function Modal({
   children: ReactNode
   wide?: boolean
 }) {
+  const { t } = useTranslation()
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-8"
       role="dialog"
       aria-modal="true"
     >
-      <button className="fixed inset-0 bg-slate-900/40" aria-label="close" onClick={onClose} />
+      <button className="fixed inset-0 bg-slate-900/40" aria-label={t('app.close')} onClick={onClose} />
       <section
         className={cx('relative w-full rounded-lg bg-white shadow-xl', wide ? 'max-w-3xl' : 'max-w-lg')}
       >
@@ -133,7 +134,7 @@ export function Modal({
           <h2 className="text-base font-semibold">{title}</h2>
           <button
             className="rounded p-1 text-slate-500 hover:bg-slate-100"
-            aria-label="close"
+            aria-label={t('app.close')}
             onClick={onClose}
           >
             ✕

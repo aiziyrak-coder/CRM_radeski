@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Language } from '../lib/api'
 import { GENDERS, SOURCES, getDistricts, type Patient, type PatientInput } from '../lib/patients'
+import { clinicDate } from '../lib/scheduling'
 import { Button, ErrorText, Field, Input, Select } from './ui'
 
 type Props = {
@@ -68,7 +69,7 @@ export default function PatientForm({ initial, withPhone, busy, error, onSubmit,
         <Input
           type="date"
           min="1900-01-01"
-          max={new Date().toISOString().slice(0, 10)}
+          max={clinicDate()}
           value={form.birth_date}
           onChange={(e) => set('birth_date', e.target.value)}
         />
