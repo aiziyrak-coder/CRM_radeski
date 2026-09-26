@@ -43,7 +43,7 @@ git clone https://github.com/aiziyrak-coder/CRM_radeski.git /home/radeski-crm
 ```
 
 ```bash
-cd /home/radeski-crm && cp .env.example .env && sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=$(openssl rand -hex 24)/" .env
+cd /home/radeski-crm && cp .env.example .env && sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=$(openssl rand -hex 24)/; s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env
 ```
 
 ```bash
@@ -54,6 +54,14 @@ cd /home/radeski-crm && docker compose -f docker-compose.prod.yml up -d --build
 curl -s http://127.0.0.1:9250/api/health/ready
 ```
 Kutilgan javob: `{"db":"ok","redis":"ok"}`.
+
+Birinchi administratorni yarating. Parol ekranda so'raladi, buyruq tarixiga yozilmaydi:
+
+```bash
+cd /home/radeski-crm && docker compose -f docker-compose.prod.yml exec api python -m app.cli create-user --username admin --full-name "Tizim administratori" --role admin
+```
+
+Qolgan foydalanuvchilar (operatorlar, registratorlar, shifokorlar) CRM ichidagi **Foydalanuvchilar** sahifasidan qo'shiladi.
 
 ## 3. Domen va SSL (sudo kerak, bu qadamni server egasi bajaradi)
 

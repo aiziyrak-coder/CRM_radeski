@@ -1,11 +1,115 @@
 {
-  "app": { "title": "Radeski CRM" },
+  "app": { "title": "Radeski CRM", "clinic": "Radeski Skin Clinic" },
+  "nav": {
+    "home": "Bosh sahifa",
+    "tasks": "Vazifalar",
+    "leads": "Murojaatlar",
+    "patients": "Bemorlar",
+    "schedule": "Jadval",
+    "myDay": "Bugungi bemorlarim",
+    "campaigns": "Kampaniyalar",
+    "qa": "Sifat nazorati",
+    "reports": "Hisobotlar",
+    "users": "Foydalanuvchilar",
+    "audit": "Audit jurnali",
+    "profile": "Profil"
+  },
+  "roles": {
+    "operator": "Operator",
+    "supervisor": "Koll-markaz rahbari",
+    "registrar": "Registrator",
+    "doctor": "Shifokor",
+    "owner": "Rahbar",
+    "admin": "Administrator"
+  },
+  "auth": {
+    "title": "Tizimga kirish",
+    "username": "Login",
+    "password": "Parol",
+    "submit": "Kirish",
+    "logout": "Chiqish",
+    "expired": "Sessiya muddati tugadi. Qaytadan kiring.",
+    "idle": "30 daqiqa harakatsizlik sababli tizimdan chiqildi.",
+    "manual": "Siz tizimdan chiqdingiz."
+  },
+  "errors": {
+    "invalid_credentials": "Login yoki parol noto'g'ri",
+    "too_many_attempts": "Juda ko'p urinish. 15 daqiqadan keyin qayta urinib ko'ring.",
+    "session_expired": "Sessiya muddati tugadi",
+    "username_taken": "Bu login band",
+    "cannot_demote_self": "O'zingizni o'chira yoki rolingizni pasaytira olmaysiz",
+    "wrong_password": "Joriy parol noto'g'ri",
+    "validation_error": "Ma'lumotlar noto'g'ri to'ldirilgan",
+    "forbidden": "Bu amal uchun ruxsat yo'q",
+    "generic": "Xatolik yuz berdi. Qayta urinib ko'ring."
+  },
+  "home": {
+    "welcome": "Xush kelibsiz, {{name}}",
+    "role": "Rolingiz: {{role}}",
+    "hint": "Chap menyuda sizga ochiq bo'limlar ko'rsatilgan. \"Tez orada\" belgisi bor bo'limlar keyingi bosqichlarda qo'shiladi."
+  },
+  "soon": {
+    "title": "Bu bo'lim tayyorlanmoqda",
+    "text": "\"{{name}}\" bo'limi keyingi bosqichlardan birida ishga tushadi.",
+    "badge": "Tez orada"
+  },
   "health": {
-    "checking": "Tizim holati tekshirilmoqda…",
+    "title": "Tizim holati",
+    "checking": "Tekshirilmoqda…",
     "ok": "Tizim ishlayapti",
     "down": "Tizim bilan aloqa yo'q",
     "db": "Ma'lumotlar bazasi",
     "redis": "Navbat (Redis)"
   },
-  "lang": { "switch": "Русский" }
+  "users": {
+    "title": "Foydalanuvchilar",
+    "add": "Foydalanuvchi qo'shish",
+    "fullName": "F.I.Sh.",
+    "username": "Login",
+    "role": "Rol",
+    "language": "Til",
+    "status": "Holati",
+    "lastLogin": "Oxirgi kirish",
+    "active": "Faol",
+    "inactive": "O'chirilgan",
+    "never": "Kirmagan",
+    "password": "Parol (kamida 8 belgi)",
+    "save": "Saqlash",
+    "cancel": "Bekor qilish",
+    "edit": "Tahrirlash",
+    "deactivate": "O'chirish",
+    "activate": "Faollashtirish",
+    "resetPassword": "Parolni tiklash",
+    "newPassword": "Yangi parol",
+    "passwordReset": "Parol yangilandi. Foydalanuvchining barcha sessiyalari yopildi.",
+    "usernameHint": "Kichik lotin harflari, raqamlar, . _ -"
+  },
+  "audit": {
+    "title": "Audit jurnali",
+    "time": "Vaqt",
+    "user": "Kim",
+    "action": "Amal",
+    "details": "Tafsilot",
+    "system": "Tizim",
+    "prev": "Oldingi",
+    "next": "Keyingi",
+    "total": "Jami: {{count}}",
+    "actions": {
+      "auth.login": "Tizimga kirdi",
+      "auth.login_failed": "Muvaffaqiyatsiz kirish",
+      "auth.logout": "Tizimdan chiqdi",
+      "auth.password_changed": "Parolini o'zgartirdi",
+      "user.create": "Foydalanuvchi yaratdi",
+      "user.update": "Foydalanuvchini o'zgartirdi",
+      "user.password_reset": "Parolni tikladi"
+    }
+  },
+  "profile": {
+    "title": "Profil",
+    "changePassword": "Parolni o'zgartirish",
+    "currentPassword": "Joriy parol",
+    "newPassword": "Yangi parol (kamida 8 belgi)",
+    "changed": "Parol o'zgartirildi. Boshqa qurilmalardagi sessiyalar yopildi."
+  },
+  "lang": { "uz": "O'zbekcha", "ru": "Русский" }
 }

@@ -9,8 +9,9 @@ Claude Code bilan ishlash tartibi: bitta sessiyada bitta vazifa (masalan, "0.3 �
 
 | # | Vazifa | Qabul mezoni |
 |---|---|---|
-| 0.1 | Repozitoriy, Docker Compose (api, web, db, redis, minio, nginx), `.env.example`, CI (lint + test) | `docker compose up` bilan hammasi ko'tariladi, `/health` 200 qaytaradi |
-| 0.2 | Foydalanuvchilar, rollar, login, JWT, audit, i18n (uz/ru), frontend karkasi (layout, menyu, tilni almashtirish) | 6 ta rol bilan kirish mumkin. Har bir rol faqat o'z menyusini ko'radi |
+| 0.1 ✅ | Repozitoriy, Docker Compose (api, web, db, redis, minio, nginx), `.env.example`, CI (lint + test) | `docker compose up` bilan hammasi ko'tariladi, `/health` 200 qaytaradi |
+| 0.2 ✅ | Foydalanuvchilar, rollar, login, JWT, audit, i18n (uz/ru), frontend karkasi (layout, menyu, tilni almashtirish) | 6 ta rol bilan kirish mumkin. Har bir rol faqat o'z menyusini ko'radi |
+| 0.2b | Admin va rahbar uchun 2FA (TOTP) — TZ 5 talabi | Admin kirishda telefondagi ilova kodini so'raydi |
 | 0.3 | Bemorlar moduli: model, CRUD, telefonni normallashtirish, translit qidiruv, dublikatlarni aniqlash | "Абдуллаев" ham, "abdullayev" ham topiladi. Takroriy raqam kiritilsa ogohlantirish chiqadi |
 | 0.4 | **Import skripti**: asosiy fayl, 7 ta tuman fayli, psoriaz/vitiligo fayli, `nomer.xlsx`. F.I.Sh. katagini ajratish, xatolar hisoboti | ~6 700 bemor va ~47 500 sovuq raqam import qilinadi. Xato qatorlar alohida CSV'ga chiqadi. Qayta ishga tushirilsa dublikat yaratilmaydi |
 | 0.5 | **Tashxislarni normallashtirish**: 1 422 xil yozuv → AI toifa taklif qiladi → admin panelda moslik jadvali → tasdiqlash → qo'llash | Shifokor jadvalni ko'rib tasdiqlaydi. Bemorlar toifa bo'yicha filtrlanadi |
