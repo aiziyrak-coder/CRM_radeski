@@ -1,0 +1,11 @@
+{
+  "app": { "title": "Radeski CRM" },
+  "health": {
+    "checking": "Tizim holati tekshirilmoqda…",
+    "ok": "Tizim ishlayapti",
+    "down": "Tizim bilan aloqa yo'q",
+    "db": "Ma'lumotlar bazasi",
+    "redis": "Navbat (Redis)"
+  },
+  "lang": { "switch": "Русский" }
+}

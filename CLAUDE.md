@@ -9,7 +9,7 @@ Read before any work: `docs/01_TZ.md` (requirements), `docs/02_ARXITEKTURA.md` (
 
 ## Stack
 - Backend: Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, Pydantic v2, Celery + Beat, PostgreSQL 16, Redis 7, MinIO.
-- Frontend: React 18 + Vite + TypeScript, Tailwind, shadcn/ui, TanStack Query, i18next, react-big-calendar, JsSIP.
+- Frontend: React 19 + Vite + TypeScript, Tailwind, shadcn/ui, TanStack Query, i18next, react-big-calendar, JsSIP.
 - Telephony: Asterisk 20 (PJSIP, ARI), Uztelecom SIP trunk.
 - AI: OpenAI API (official `openai` Python SDK, key in `.env` as `OPENAI_API_KEY`) for both STT (transcription) and LLM analysis with structured outputs (JSON Schema). No GPU on the server. Both behind adapter interfaces in `backend/app/integrations/{stt,llm}/`.
 - Deployment: same server as radeski.uz (our team's site, FastAPI). Separate compose project + separate DB; shared nginx (`crm.radeski.uz`). Site → CRM webhook for new appointment requests.

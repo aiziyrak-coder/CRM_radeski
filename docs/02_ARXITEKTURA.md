@@ -46,7 +46,7 @@ Versiya 0.1 · 2026-09-26 · TZ bilan birga o'qiladi: [01_TZ.md](01_TZ.md)
 | Fon vazifalari | **Celery + Celery Beat** (broker: Redis) | Jadval bo'yicha ishlar (07:30 tasdiqlash, sinxronizatsiya) va navbatlar uchun |
 | Ma'lumotlar bazasi | **PostgreSQL 16** + `pg_trgm`, `unaccent` | Qidiruv (trigram), JSONB (AI natijalari), ishonchlilik |
 | Kesh va real vaqt | **Redis 7** | Celery broker, pub/sub orqali WebSocket'ga hodisalar |
-| Frontend | **React 18 + Vite + TypeScript**, Tailwind, shadcn/ui, TanStack Query, React Router, i18next (uz/ru) | Sayt ham Vite/React'da. Komponentlar tayyor |
+| Frontend | **React 19 + Vite + TypeScript**, Tailwind, shadcn/ui, TanStack Query, React Router, i18next (uz/ru) | Sayt ham Vite/React'da. Komponentlar tayyor |
 | Kalendar | **react-big-calendar** (MIT, resurs ko'rinishi bor) | FullCalendar'ning resurs rejimi pullik litsenziya talab qiladi |
 | Softfon | **JsSIP** (WebRTC) | Brauzerdan qo'ng'iroq qilish uchun |
 | ATS | **Asterisk 20** (PJSIP, ARI) | Bepul, o'z serverda ishlaydi, stereo yozuv qiladi, Uztelecom SIP-trunk bilan ishlaydi |
