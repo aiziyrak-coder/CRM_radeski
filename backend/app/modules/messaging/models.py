@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, Timestamps, UUIDPk, str_enum
@@ -22,6 +22,7 @@ class Direction(enum.StrEnum):
 class MessageStatus(enum.StrEnum):
     RECEIVED = "received"  # inbound
     QUEUED = "queued"  # outbound, waiting for the worker (or quiet hours to end)
+    SENDING = "sending"  # claimed by a worker, the provider is being called
     SENT = "sent"  # the provider accepted it
     DELIVERED = "delivered"  # the provider confirmed delivery (SMS callbacks)
     FAILED = "failed"
@@ -48,6 +49,17 @@ class Conversation(UUIDPk, Timestamps, Base):
 
 class Message(UUIDPk, Base):
     __tablename__ = "messages"
+    __table_args__ = (
+        # webhooks are retried by the providers: the same message id is stored once
+        Index(
+            "uq_messages_external",
+            "conversation_id",
+            "direction",
+            "external_id",
+            unique=True,
+            postgresql_where=text("external_id IS NOT NULL"),
+        ),
+    )
 
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("conversations.id", ondelete="CASCADE"), index=True
@@ -66,6 +78,8 @@ class Message(UUIDPk, Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # when a worker took it for sending: a SENDING row this old was interrupted (worker crash)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class MessageTemplate(UUIDPk, Timestamps, Base):

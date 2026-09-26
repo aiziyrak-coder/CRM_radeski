@@ -5,8 +5,10 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from app import cli
 from app.core.config import get_settings
 from app.core.db import SessionLocal
+from app.modules.audit.models import AuditLog
 from app.modules.users.models import Role, User
 from tests.conftest import TEST_PASSWORD, bearer, login, make_user
 
@@ -76,3 +78,94 @@ async def test_admin_can_reset_a_lost_authenticator(client: AsyncClient) -> None
     assert resp.status_code == 204
     again = await password_step(client, "owner1")
     assert again["setup"] is True and again["secret"] == await secret_of("owner1")
+
+
+async def test_code_guessing_is_limited_across_password_logins(client: AsyncClient) -> None:
+    """Knowing the password must not buy unlimited code guesses: the code counter is per user,
+    survives a correct password and locks the second step (TZ 5, 2FA)."""
+    await make_user("boss", Role.ADMIN)
+    await login(client, "boss")  # enrolled
+    secret = await secret_of("boss")
+    good = pyotp.TOTP(secret).now()
+    wrong = "000000" if good != "000000" else "111111"
+
+    async def guess(challenge: str, code: str = wrong) -> int:
+        resp = await client.post("/api/auth/totp", json={"challenge": challenge, "code": code})
+        return resp.status_code
+
+    first = (await password_step(client, "boss"))["challenge"]
+    assert [await guess(first) for _ in range(3)] == [401, 401, 401]
+    # a challenge is good for a limited number of codes, then a new password step is needed
+    exhausted = await client.post("/api/auth/totp", json={"challenge": first, "code": good})
+    assert exhausted.status_code == 401 and exhausted.json()["detail"] == "challenge_expired"
+
+    # the correct password again does not reset the code counter
+    second = (await password_step(client, "boss"))["challenge"]
+    assert [await guess(second) for _ in range(2)] == [401, 401]  # 5 wrong codes in total
+
+    third = (await password_step(client, "boss"))["challenge"]
+    locked = await client.post("/api/auth/totp", json={"challenge": third, "code": good})
+    assert locked.status_code == 429 and locked.json()["detail"] == "too_many_attempts"
+
+    async with SessionLocal() as s:
+        actions = list(await s.scalars(select(AuditLog.action)))
+    assert actions.count("auth.totp_failed") == 5 and "auth.totp_locked" in actions
+
+
+async def test_successful_code_resets_counter_and_burns_the_challenge(
+    client: AsyncClient,
+) -> None:
+    await make_user("boss", Role.ADMIN)
+    await login(client, "boss")
+    secret = await secret_of("boss")
+
+    for _ in range(2):  # 4 wrong codes, then a correct one: the counter starts over
+        challenge = (await password_step(client, "boss"))["challenge"]
+        for _ in range(2):
+            await client.post("/api/auth/totp", json={"challenge": challenge, "code": "000000"})
+    challenge = (await password_step(client, "boss"))["challenge"]
+    ok = await client.post(
+        "/api/auth/totp", json={"challenge": challenge, "code": pyotp.TOTP(secret).now()}
+    )
+    assert ok.status_code == 200
+    # the same challenge can't open a second session
+    again = await client.post(
+        "/api/auth/totp", json={"challenge": challenge, "code": pyotp.TOTP(secret).now()}
+    )
+    assert again.status_code == 401 and again.json()["detail"] == "challenge_expired"
+
+    challenge = (await password_step(client, "boss"))["challenge"]
+    for _ in range(3):
+        resp = await client.post("/api/auth/totp", json={"challenge": challenge, "code": "000000"})
+        assert resp.status_code == 401  # not locked: only 3 failures since the success
+
+
+async def test_totp_role_promotion_ends_existing_sessions(client: AsyncClient) -> None:
+    await make_user("admin", Role.ADMIN)
+    admin = bearer(await login(client, "admin"))
+    op = await make_user("op1", Role.OPERATOR)
+    op_token = await login(client, "op1")  # password only; the client holds op1's cookie
+
+    resp = await client.patch(f"/api/users/{op.id}", json={"role": "owner"}, headers=admin)
+    assert resp.status_code == 200
+    # neither the refresh cookie nor the access token issued for the old role work any more
+    assert (await client.post("/api/auth/refresh")).status_code == 401
+    assert (await client.get("/api/auth/me", headers=bearer(op_token))).status_code == 401
+    body = await password_step(client, "op1")
+    assert body["totp_required"] is True and "access_token" not in body
+
+
+async def test_cli_reset_totp_is_audited_and_ends_sessions(client: AsyncClient) -> None:
+    await make_user("owner1", Role.OWNER)
+    await login(client, "owner1")
+
+    async with SessionLocal() as s:
+        user = await s.scalar(select(User).where(User.username == "owner1"))
+        await cli.reset_totp(s, user)
+        await s.commit()
+
+    assert (await client.post("/api/auth/refresh")).status_code == 401
+    async with SessionLocal() as s:
+        log = await s.scalar(select(AuditLog).where(AuditLog.action == "user.totp_reset"))
+        user = await s.scalar(select(User).where(User.username == "owner1"))
+    assert log is not None and log.after == {"via": "cli"} and user.totp_enabled is False

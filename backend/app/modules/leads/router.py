@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, or_, select
 
 from app.core import clinic_time
@@ -99,6 +99,8 @@ async def list_leads(
     if patient_id:
         filters.append(Lead.patient_id == patient_id)
     if since:
+        if not 2000 <= since.year <= 2100:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad_range")
         filters.append(Lead.created_at >= clinic_time.day_bounds(since)[0])
     if q and q.strip():
         digits = "".join(ch for ch in q if ch.isdigit())
@@ -141,14 +143,20 @@ async def update_lead(
     if lead is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="lead_not_found")
     changes = body.model_dump(exclude_unset=True)
-    if changes.get("stage") is LeadStage.LOST and not (
-        changes.get("lost_reason") or lead.lost_reason
-    ):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="reason_required")
+    stage, lost_reason = changes.pop("stage", None), changes.pop("lost_reason", None)
     for field, value in changes.items():
         setattr(lead, field, value)
-    if changes.get("stage") and changes["stage"] is not LeadStage.NEW:
-        service.mark_contacted(lead)
+    try:
+        if stage is not None:
+            await service.change_stage(
+                session, lead, stage, lost_reason=lost_reason, user_id=user.id
+            )
+        elif lost_reason is not None:
+            await service.change_stage(
+                session, lead, lead.stage, lost_reason=lost_reason, user_id=user.id
+            )
+    except service.LeadError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=exc.code) from None
     audit.record(
         session, "lead.update", user_id=user.id, entity="lead", entity_id=lead.id,
         after=body.model_dump(mode="json", exclude_unset=True), ip=client_ip(request),
@@ -198,7 +206,13 @@ async def site_appointment(
     raw = await request.body()
     if not _valid_signature(raw, x_signature):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="bad_signature")
-    body = SiteAppointmentIn.model_validate_json(raw)
+    try:
+        body = SiteAppointmentIn.model_validate_json(raw)
+    except ValidationError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=exc.errors(include_url=False, include_context=False, include_input=False),
+        ) from None
     lead, created = await intake_site_appointment(session, body)
     await session.commit()
     return {"lead_id": str(lead.id), "status": "created" if created else "duplicate"}

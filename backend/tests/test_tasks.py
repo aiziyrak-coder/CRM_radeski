@@ -14,7 +14,7 @@ from app.core import clinic_time
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.text import search_key
-from app.modules.catalog.models import Service
+from app.modules.catalog.models import Doctor, Service
 from app.modules.leads.models import Lead
 from app.modules.patients.models import Patient, PatientKind, PatientPhone
 from app.modules.scripts.router import seed_if_empty
@@ -278,7 +278,13 @@ async def test_lost_lead_and_reactivation_generators(client: AsyncClient, op: di
             )
         )  # fmt: skip
         await s.commit()
+        # the new-inquiry call is still pending: no second task for the same person
+        assert await rules.generate_lost_leads(s) == 0
+        await s.execute(
+            update(Task).where(Task.type == TaskType.NEW_LEAD).values(status=TaskStatus.DONE)
+        )
         assert await rules.generate_lost_leads(s) == 1
+        assert await rules.generate_lost_leads(s) == 0  # idempotent
         assert await rules.generate_reactivation(s) == 1
         assert await rules.generate_reactivation(s) == 0  # the patient now has an open task
         await s.commit()
@@ -510,8 +516,11 @@ async def test_patient_timeline_joins_every_touchpoint(
     times = [e["at"] for e in feed]
     assert times == sorted(times, reverse=True)
 
-    # doctors get the medical history without call-center notes
-    await make_user("doc1", Role.DOCTOR)
+    # the patient's doctor gets the medical history without call-center notes
+    doc_user = await make_user("doc1", Role.DOCTOR)
+    async with SessionLocal() as s:
+        (await s.get(Doctor, uuid.UUID(clinic["d1"]))).user_id = doc_user.id
+        await s.commit()
     doc = bearer(await login(client, "doc1"))
     doc_kinds = {
         e["kind"]
@@ -553,3 +562,31 @@ async def test_merge_carries_visits_calls_and_leads(
     assert kinds.count("planned_call") == 1
     visits = (await client.get(f"/api/appointments/patient/{clinic['patient']}", headers=op)).json()
     assert len(visits) == 1
+
+
+async def test_do_not_call_on_the_card_cancels_outbound_calls(
+    client: AsyncClient, clinic: dict, op: dict
+) -> None:
+    from app.modules.tasks import service as task_service
+
+    patient_id = uuid.UUID(clinic["patient"])
+    async with SessionLocal() as s:
+        for type_ in (TaskType.REACTIVATION, TaskType.CALLBACK):
+            await task_service.create_task(
+                s, type_, due_at=datetime.now(UTC), patient_id=patient_id,
+                dedupe_key=f"dnc-test:{type_.value}",
+            )  # fmt: skip
+        await s.commit()
+
+    url = f"/api/patients/{patient_id}/do-not-call"
+    resp = await client.put(url, json={"do_not_call": True, "reason": "so'radi"}, headers=op)
+    assert resp.status_code == 200, resp.text
+
+    async with SessionLocal() as s:
+        result = await s.execute(
+            select(Task.type, Task.status).where(Task.patient_id == patient_id)
+        )
+        rows = {type_: status for type_, status in result}
+    # campaign-type calls stop; a callback the patient asked for stays
+    assert rows[TaskType.REACTIVATION] == TaskStatus.CANCELLED
+    assert rows[TaskType.CALLBACK] == TaskStatus.OPEN

@@ -101,18 +101,27 @@ async def login_totp(
     body: TotpIn, request: Request, response: Response, session: SessionDep
 ) -> TokenOut:
     ip = client_ip(request) or "unknown"
-    user_id = totp.user_id_from(body.challenge)
-    user = await session.get(User, user_id) if user_id else None
-    if user is None or not user.is_active:
+    decoded = totp.decode_challenge(body.challenge)
+    user = await session.get(User, decoded[0]) if decoded else None
+    if decoded is None or user is None or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="challenge_expired")
-    if await ratelimit.is_locked(user.username, ip):
+    jti = decoded[1]
+    challenge_ttl = totp.CHALLENGE_MINUTES * 60
+    # counted per user, not per IP, and not cleared by a correct password: logging in again
+    # must not reset the number of codes an attacker who knows the password may try
+    if await ratelimit.totp_locked(user.id):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="too_many_attempts")
+    if not await ratelimit.use_challenge(jti, challenge_ttl):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="challenge_expired")
     if not totp.verify(user, body.code.strip()):
-        await ratelimit.register_failure(user.username, ip)
+        locked = await ratelimit.register_totp_failure(user.id)
         audit.record(session, "auth.totp_failed", user_id=user.id, ip=ip)
+        if locked:
+            audit.record(session, "auth.totp_locked", user_id=user.id, ip=ip)
         await session.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid_code")
-    await ratelimit.reset(user.username, ip)
+    await ratelimit.reset_totp(user.id)
+    await ratelimit.burn_challenge(jti, challenge_ttl)
     if not user.totp_enabled:
         user.totp_enabled = True
         audit.record(session, "auth.totp_enrolled", user_id=user.id, ip=ip)
@@ -209,6 +218,8 @@ async def create_user(
         user = await service.create_user(session, body)
     except service.UsernameTakenError:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="username_taken") from None
+    except service.BranchNotFoundError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="branch_not_found") from None
     audit.record(
         session,
         "user.create",
@@ -248,8 +259,15 @@ async def update_user(
         raise HTTPException(status.HTTP_409_CONFLICT, detail="extension_taken")
 
     before = service.snapshot(user)
-    service.apply_update(user, body)
-    if body.is_active is False:
+    try:
+        await service.update_user(session, user, body)
+    except service.BranchNotFoundError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="branch_not_found") from None
+    except service.ExtensionTakenError:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="extension_taken") from None
+    role_changed = before["role"] != user.role
+    if body.is_active is False or role_changed:
+        # a new role (e.g. one that needs 2FA) must start from a fresh login
         await service.revoke_all_sessions(session, user.id)
     audit.record(
         session,

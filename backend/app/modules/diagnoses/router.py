@@ -15,8 +15,10 @@ from app.modules.users.models import Role, User
 
 router = APIRouter(prefix="/diagnoses", tags=["diagnoses"])
 
+# registrars use the category filter and badges on the patients page
 Reader = Annotated[
-    User, Depends(require_roles(Role.ADMIN, Role.DOCTOR, Role.SUPERVISOR, Role.OPERATOR))
+    User,
+    Depends(require_roles(Role.ADMIN, Role.DOCTOR, Role.SUPERVISOR, Role.OPERATOR, Role.REGISTRAR)),
 ]
 # TZ 4.8.4: a doctor reviews and approves the mapping
 Approver = Annotated[User, Depends(require_roles(Role.ADMIN, Role.DOCTOR))]

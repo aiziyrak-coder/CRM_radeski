@@ -1,5 +1,6 @@
 """Phase 3: PBX call events, missed-call tasks, softphone credentials, recordings."""
 
+import asyncio
 import hashlib
 import hmac
 import shutil
@@ -336,3 +337,90 @@ async def test_reports_count_calls(client: AsyncClient, clinic: dict) -> None:
         "/api/reports/kpi.xlsx", params={"from": today, "to": today}, headers=sup
     )
     assert xlsx.status_code == 200
+
+
+# --- lost reports, odd caller ids, races --------------------------------------------------------
+
+
+async def test_call_without_hangup_report_is_closed_as_missed(client: AsyncClient) -> None:
+    long_ago = int(systime.time()) - 3 * 3600
+    await event(client, kind="ring", call_id="800.1", caller="998935550077", started=long_ago)
+    await event(client, kind="ring", call_id="800.2", caller="998935550078")  # still in the queue
+    async with SessionLocal() as s:
+        assert await service.close_stale_calls(s) == 1
+        await s.commit()
+    stale = await get_call("800.1")
+    assert stale.status == "missed" and stale.ended_at is None
+    assert (await get_call("800.2")).status == "ringing"
+    async with SessionLocal() as s:  # the missed-call rule ran: the number is called back
+        lead = (await s.scalars(select(Lead))).one()
+    assert lead.phone == "+998935550077" and (await get_call("800.1")).lead_id == lead.id
+    async with SessionLocal() as s:
+        assert await service.close_stale_calls(s) == 0
+
+    # the real report arrives after all (the CRM was down): it wins over the guess
+    await event(
+        client, kind="end", direction="in", call_id="800.1", caller="998935550077",
+        status="answered", agent="101", talk="30", started=long_ago,
+    )  # fmt: skip
+    call = await get_call("800.1")
+    assert call.status == "answered" and call.ended_at is not None and call.talk_seconds == 30
+    # ...but a report repeated after that is still ignored
+    await event(client, kind="end", direction="in", call_id="800.1", status="missed")
+    assert (await get_call("800.1")).status == "answered"
+
+
+@pytest.mark.parametrize("caller", ["anonymous", "+4915112345678", "1050", ""])
+async def test_non_uzbek_caller_ids_never_reach_inquiries(client: AsyncClient, caller: str) -> None:
+    await event(client, kind="ring", call_id="810.1", caller=caller)
+    await event(client, kind="end", direction="in", call_id="810.1", caller=caller, status="missed")
+    call = await get_call("810.1")
+    assert call.status == "missed" and call.phone is None
+    assert call.caller_raw == (caller or None)
+    async with SessionLocal() as s:
+        assert not list(await s.scalars(select(Lead)))
+    calls = (await client.get("/api/telephony/calls", headers=await _viewer(client))).json()
+    assert calls[0]["phone"] is None and calls[0]["caller_raw"] == (caller or None)
+
+
+async def _viewer(client: AsyncClient) -> dict:
+    await make_user("sup9", Role.SUPERVISOR)
+    return bearer(await login(client, "sup9"))
+
+
+async def test_ring_and_end_arriving_together_make_one_call(clinic: dict) -> None:
+    now = int(systime.time())
+    ring = {"kind": "ring", "call_id": "820.1", "caller": PATIENT_PHONE, "started": str(now)}
+    end = {**ring, "kind": "end", "direction": "in", "status": "missed", "ended": str(now)}
+
+    async def post(data: dict) -> None:
+        async with SessionLocal() as s:
+            await service.record_event(s, data)
+            await s.commit()
+
+    await asyncio.gather(post(ring), post(end), post(end))
+    call = await get_call("820.1")
+    assert call.status == "missed" and str(call.patient_id) == clinic["patient"]
+    assert len(await open_tasks(TaskType.MISSED_CALL)) == 1
+
+
+async def test_recording_conversion_is_claimed(client: AsyncClient, tmp_path: Path) -> None:
+    await event(
+        client, kind="end", direction="in", call_id="830.1", caller=PATIENT_PHONE,
+        status="answered", agent="101", talk="10",
+    )  # fmt: skip
+    call = await get_call("830.1")
+    async with SessionLocal() as busy:  # another worker is converting it right now
+        await busy.scalar(select(Call).where(Call.id == call.id).with_for_update())
+        async with SessionLocal() as s:
+            assert await service.process_recording(s, call.id) is None
+        await busy.rollback()
+
+    # converted earlier, but the worker died before storing the result: the MP3 is reused
+    (tmp_path / "830.1.mp3").write_bytes(b"ID3fake")
+    assert service.convert_recording("830.1") == "830.1.mp3"
+    async with SessionLocal() as s:
+        assert await service.process_recording(s, call.id) == "ready"
+        await s.commit()
+    stored = await get_call("830.1")
+    assert stored.recording == "830.1.mp3" and stored.recording_status == "ready"

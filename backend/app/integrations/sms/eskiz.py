@@ -31,12 +31,11 @@ class EskizSms:
 
     async def send(self, phone: str, text: str, ref: str) -> str:
         s = get_settings()
-        data = {
-            "mobile_phone": phone.lstrip("+"),
-            "message": text,
-            "from": s.eskiz_from,
-            "callback_url": f"{s.public_url.rstrip('/')}/api/integrations/sms/eskiz",
-        }
+        data = {"mobile_phone": phone.lstrip("+"), "message": text, "from": s.eskiz_from}
+        if s.eskiz_callback_secret:  # delivery reports need the secret in the URL
+            data["callback_url"] = (
+                f"{s.public_url.rstrip('/')}/api/integrations/sms/eskiz/{s.eskiz_callback_secret}"
+            )
         try:
             async with httpx.AsyncClient(timeout=20, transport=self.transport) as client:
                 resp = await self._post(client, _token or await self._login(client), data)

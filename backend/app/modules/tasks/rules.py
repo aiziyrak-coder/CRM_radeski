@@ -3,13 +3,15 @@
 Every generator is idempotent (dedupe keys), so beat jobs can safely re-run.
 """
 
+import uuid
 from datetime import date, time, timedelta
 from typing import Any
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clinic_time
+from app.core.config import get_settings
 from app.core.events import on
 from app.modules.catalog.models import Service
 from app.modules.leads import service as leads
@@ -26,6 +28,7 @@ from app.modules.scheduling.models import (
 from app.modules.tasks import service as tasks
 from app.modules.tasks.models import (
     CLOSED_BY_BOOKING,
+    OUTBOUND_TYPES,
     Outcome,
     Task,
     TaskAttempt,
@@ -36,10 +39,34 @@ from app.modules.telephony.models import UNANSWERED_INBOUND, Call, CallDirection
 
 S = AppointmentStatus
 CONFIRM_TYPES = (TaskType.CONFIRM_VISIT,)
-REPEAT_LEAD_DAYS = 3  # call this many days before the doctor's recommended date
-LOST_LEAD_AFTER = timedelta(hours=24)
-REACTIVATION_AFTER = timedelta(days=180)  # TZ 4.5: default 6 months
-REACTIVATION_DAILY_LIMIT = 20
+# calls about an inquiry itself: pointless once it is lost or booked
+LEAD_TASK_TYPES = (TaskType.NEW_LEAD, TaskType.MISSED_CALL, TaskType.LOST_LEAD)
+BOOKED_AHEAD = (S.SCHEDULED, S.CONFIRMED)
+
+
+async def _has_future_visit(
+    session: AsyncSession,
+    patient_id: uuid.UUID,
+    *,
+    exclude: uuid.UUID | None = None,
+    service_id: uuid.UUID | None = None,
+) -> bool:
+    """The patient is already booked (for this service), so there is nobody to call."""
+    stmt = select(Appointment.id).where(
+        Appointment.patient_id == patient_id,
+        Appointment.starts_at > clinic_time.now(),
+        Appointment.status.in_(BOOKED_AHEAD),
+    )
+    if exclude:
+        stmt = stmt.where(Appointment.id != exclude)
+    if service_id:
+        stmt = stmt.where(
+            exists().where(
+                AppointmentService.appointment_id == Appointment.id,
+                AppointmentService.service_id == service_id,
+            )
+        )
+    return await session.scalar(stmt.limit(1)) is not None
 
 
 # --- events -----------------------------------------------------------------------------------
@@ -64,10 +91,11 @@ async def _on_booked(session: AsyncSession, p: dict[str, Any]) -> None:
             TaskStatus.DONE, Outcome.BOOKED, now, appt.created_by,
         )  # fmt: skip
         t.attempts += 1
+        # the booking closed the task, not a call: reports don't count it as a dial attempt
         session.add(
             TaskAttempt(
                 task_id=t.id, task_type=t.type, user_id=appt.created_by, patient_id=t.patient_id,
-                outcome=Outcome.BOOKED, created_at=now,
+                outcome=Outcome.BOOKED, automatic=True, created_at=now,
             )
         )  # fmt: skip
     for rec in await session.scalars(
@@ -80,9 +108,8 @@ async def _on_booked(session: AsyncSession, p: dict[str, Any]) -> None:
     for lead in await session.scalars(
         select(Lead).where(Lead.patient_id == appt.patient_id, Lead.stage.in_(OPEN_STAGES))
     ):
-        leads.mark_contacted(lead)
-        lead.stage = LeadStage.BOOKED
         lead.appointment_id = appt.id
+        await leads.change_stage(session, lead, LeadStage.BOOKED, user_id=appt.created_by)
 
 
 @on("appointment.status_changed")
@@ -110,7 +137,7 @@ async def _on_status(session: AsyncSession, p: dict[str, Any]) -> None:
         for lead in await session.scalars(
             select(Lead).where(Lead.patient_id == appt.patient_id, Lead.stage == LeadStage.BOOKED)
         ):
-            lead.stage = LeadStage.VISITED
+            await leads.change_stage(session, lead, LeadStage.VISITED)
     if new is S.COMPLETED:
         await _after_procedure(session, appt)
 
@@ -140,7 +167,10 @@ async def _after_procedure(session: AsyncSession, appt: Appointment) -> None:
                     Appointment.status == S.COMPLETED,
                 )
             )
-            if (done or 0) < service.course_sessions:
+            # TZ 4.5 #8: only when the next session isn't booked yet
+            if (done or 0) < service.course_sessions and not await _has_future_visit(
+                session, appt.patient_id, exclude=appt.id, service_id=service.id
+            ):
                 due = visit_day + timedelta(days=max(service.min_interval_days - 2, 0))
                 await tasks.create_task(
                     session, TaskType.COURSE_CONTINUE, due_at=clinic_time.at(due, time(10)),
@@ -153,9 +183,11 @@ async def _after_procedure(session: AsyncSession, appt: Appointment) -> None:
 @on("recommendation.created")
 async def _on_recommendation(session: AsyncSession, p: dict[str, Any]) -> None:
     rec: Recommendation = p["recommendation"]
-    due = max(
-        clinic_time.at(rec.due_date - timedelta(days=REPEAT_LEAD_DAYS), time(9)), clinic_time.now()
-    )
+    # TZ 4.5 #6: "if the patient hasn't booked yet"
+    if await _has_future_visit(session, rec.patient_id, exclude=rec.appointment_id):
+        return
+    lead_days = get_settings().repeat_visit_lead_days
+    due = max(clinic_time.at(rec.due_date - timedelta(days=lead_days), time(9)), clinic_time.now())
     await tasks.create_task(
         session, TaskType.REPEAT_VISIT, due_at=due, patient_id=rec.patient_id,
         recommendation_id=rec.id, note=rec.note, dedupe_key=f"rec:{rec.id}",
@@ -172,22 +204,57 @@ async def _on_lead(session: AsyncSession, p: dict[str, Any]) -> None:
     )  # fmt: skip
 
 
+@on("lead.stage_changed")
+async def _on_lead_stage(session: AsyncSession, p: dict[str, Any]) -> None:
+    lead: Lead = p["lead"]
+    new: LeadStage = p["new"]
+    if new is LeadStage.LOST:
+        await tasks.close_open(
+            session, types=LEAD_TASK_TYPES, lead_id=lead.id, outcome=None,
+            status=TaskStatus.CANCELLED,
+        )  # fmt: skip
+    elif new is LeadStage.BOOKED:
+        await tasks.close_open(
+            session, types=LEAD_TASK_TYPES, lead_id=lead.id, outcome=Outcome.BOOKED
+        )
+
+
+@on("patient.do_not_call_set")
+async def _on_do_not_call(session: AsyncSession, p: dict[str, Any]) -> None:
+    """TZ 4.1: "don't call" set on the card (or kept by a merge) takes the patient out of every
+    campaign, reactivation and lost-lead call, as the call result "do_not_call" already does."""
+    await tasks.close_open(
+        session, types=OUTBOUND_TYPES, patient_id=p["patient"].id,
+        outcome=Outcome.DO_NOT_CALL, status=TaskStatus.CANCELLED,
+    )  # fmt: skip
+
+
 @on("call.finished")
 async def _on_call(session: AsyncSession, p: dict[str, Any]) -> None:
     call: Call = p["call"]
     if call.direction is not CallDirection.IN:
         return
     if call.status is CallStatus.ANSWERED:
-        # the patient got through: an earlier missed call is resolved
+        # the person got through: an earlier missed call (and a fresh inquiry) is resolved
         if call.patient_id:
             await tasks.close_open(
                 session, types=(TaskType.MISSED_CALL,), patient_id=call.patient_id,
                 outcome=Outcome.DONE,
             )  # fmt: skip
+        match = [Lead.id == call.lead_id] if call.lead_id else []
+        if call.phone:
+            match.append(Lead.phone == call.phone)
+        if not match:
+            return
         for lead in await session.scalars(
-            select(Lead).where(Lead.phone == call.phone, Lead.stage.in_(OPEN_STAGES))
+            select(Lead).where(or_(*match), Lead.stage.in_(OPEN_STAGES))
         ):
             leads.mark_contacted(lead)
+            if not call.patient_id:
+                await tasks.close_open(
+                    session, types=(TaskType.MISSED_CALL, TaskType.NEW_LEAD), lead_id=lead.id,
+                    outcome=Outcome.DONE,
+                )  # fmt: skip
         return
     if call.status not in UNANSWERED_INBOUND or not call.phone:
         return
@@ -195,17 +262,10 @@ async def _on_call(session: AsyncSession, p: dict[str, Any]) -> None:
     now = clinic_time.now()
     due = now if clinic_time.is_open(now) else clinic_time.next_opening(now)
     note = "1 ni bosib qayta qo'ng'iroq so'radi" if call.callback_requested else None
-    day = clinic_time.local(due).date().isoformat()
     if call.patient_id:
-        await tasks.create_task(
-            session, TaskType.MISSED_CALL, due_at=due, patient_id=call.patient_id,
-            dedupe_key=f"missed:{call.patient_id}:{day}", note=note,
-        )  # fmt: skip
+        owner, target = Task.patient_id == call.patient_id, {"patient_id": call.patient_id}
     elif call.lead_id:
-        await tasks.create_task(
-            session, TaskType.MISSED_CALL, due_at=due, lead_id=call.lead_id,
-            dedupe_key=f"missed:lead:{call.lead_id}:{day}", note=note,
-        )  # fmt: skip
+        owner, target = Task.lead_id == call.lead_id, {"lead_id": call.lead_id}
     else:
         # an unknown number becomes an inquiry (its "new inquiry" task carries the 15-min SLA)
         lead, _ = await leads.create_lead(
@@ -213,6 +273,23 @@ async def _on_call(session: AsyncSession, p: dict[str, Any]) -> None:
             note=note or "Javobsiz qo'ng'iroq",
         )  # fmt: skip
         call.lead_id = lead.id
+        return
+    # calling again while a callback is pending doesn't pile up tasks; once that task is
+    # closed, a new missed call gets a new one (the key per call keeps a re-sent event idempotent)
+    pending = await session.scalar(
+        select(Task)
+        .where(owner, Task.type == TaskType.MISSED_CALL, Task.status == TaskStatus.OPEN)
+        .order_by(Task.created_at)
+        .limit(1)
+    )
+    if pending is not None:
+        if note and note not in (pending.note or ""):
+            pending.note = f"{pending.note}\n{note}" if pending.note else note
+        return
+    await tasks.create_task(
+        session, TaskType.MISSED_CALL, due_at=due, dedupe_key=f"missed:{call.id}", note=note,
+        **target,
+    )  # fmt: skip
 
 
 @on("task.result")
@@ -225,9 +302,14 @@ async def _on_task_result(session: AsyncSession, p: dict[str, Any]) -> None:
             if outcome not in (Outcome.NO_ANSWER, Outcome.WRONG_NUMBER):
                 leads.mark_contacted(lead)
             if outcome in (Outcome.REFUSED, Outcome.WRONG_NUMBER, Outcome.DO_NOT_CALL):
-                lead.stage, lead.lost_reason = LeadStage.LOST, p.get("reason") or outcome.value
+                reason = p.get("reason")
+                await leads.change_stage(
+                    session, lead, LeadStage.LOST,
+                    lost_reason=reason if reason in leads.LOST_REASONS else outcome.value,
+                    user_id=p.get("user_id"), contacted=outcome is not Outcome.WRONG_NUMBER,
+                )  # fmt: skip
             elif outcome is Outcome.THINKING:
-                lead.stage = LeadStage.LATER
+                await leads.change_stage(session, lead, LeadStage.LATER, user_id=p.get("user_id"))
     # confirming by phone updates the appointment itself (no double work for the operator)
     if task.type is TaskType.CONFIRM_VISIT and task.appointment_id:
         from app.modules.scheduling import service as scheduling
@@ -267,12 +349,21 @@ async def generate_confirmations(session: AsyncSession, day: date | None = None)
 
 async def generate_lost_leads(session: AsyncSession) -> int:
     """Inquiries that didn't turn into a booking within 24 hours (TZ 4.5 #4)."""
-    cutoff = clinic_time.now() - LOST_LEAD_AFTER
+    cutoff = clinic_time.now() - timedelta(hours=get_settings().lost_lead_after_hours)
+    # someone is already due to call this person (e.g. the new-inquiry task is still open)
+    has_open = exists().where(
+        Task.status == TaskStatus.OPEN,
+        or_(
+            Task.lead_id == Lead.id,
+            and_(Lead.patient_id.is_not(None), Task.patient_id == Lead.patient_id),
+        ),
+    )
     rows = await session.scalars(
         select(Lead).where(
             Lead.stage.in_((LeadStage.NEW, LeadStage.CONTACTED, LeadStage.LATER)),
             Lead.created_at < cutoff,
             Lead.appointment_id.is_(None),
+            ~has_open,
         )
     )
     created = 0
@@ -284,10 +375,10 @@ async def generate_lost_leads(session: AsyncSession) -> int:
     return created
 
 
-async def generate_reactivation(
-    session: AsyncSession, limit: int = REACTIVATION_DAILY_LIMIT
-) -> int:
+async def generate_reactivation(session: AsyncSession, limit: int | None = None) -> int:
     """Patients who haven't visited for 6 months (TZ 4.5 #9), a few per day."""
+    settings = get_settings()
+    limit = settings.reactivation_daily_limit if limit is None else limit
     now = clinic_time.now()
     has_future = exists().where(
         Appointment.patient_id == Patient.id,
@@ -301,7 +392,7 @@ async def generate_reactivation(
             Patient.kind == PatientKind.ACTIVE,
             Patient.merged_into_id.is_(None),
             Patient.do_not_call.is_(False),
-            Patient.last_visit_at < now - REACTIVATION_AFTER,
+            Patient.last_visit_at < now - timedelta(days=settings.reactivation_after_days),
             ~has_future,
             ~has_open,
         )

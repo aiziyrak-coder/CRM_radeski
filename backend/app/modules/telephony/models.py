@@ -42,7 +42,10 @@ class Call(UUIDPk, Timestamps, Base):
     pbx_id: Mapped[str] = mapped_column(String(64), unique=True)  # Asterisk UNIQUEID
     direction: Mapped[CallDirection] = mapped_column(str_enum(CallDirection, 5), index=True)
     status: Mapped[CallStatus] = mapped_column(str_enum(CallStatus, 15), index=True)
-    phone: Mapped[str | None] = mapped_column(String(32), index=True)  # E.164 when valid
+    # E.164 only (what patient lookup, inquiries and tasks use); None for anonymous / foreign /
+    # short numbers, which are kept as the PBX reported them in caller_raw (display only)
+    phone: Mapped[str | None] = mapped_column(String(32), index=True)
+    caller_raw: Mapped[str | None] = mapped_column(String(64))
     patient_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("patients.id"), index=True)
     lead_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("leads.id", ondelete="SET NULL"))
     task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"))

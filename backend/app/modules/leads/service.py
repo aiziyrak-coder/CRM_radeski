@@ -3,16 +3,26 @@
 import uuid
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clinic_time
+from app.core.config import get_settings
 from app.core.events import emit
 from app.core.text import search_key
 from app.modules.leads.models import Lead, LeadChannel, LeadStage
 from app.modules.patients import service as patients_service
 from app.modules.patients.models import Patient, PatientKind, PatientPhone, Source
+from app.modules.tasks.models import REASONS
 
-SLA_MINUTES = 15  # TZ 4.4: first answer within 15 working minutes
+# a lost inquiry's reason: the TZ 4.5 list, or the call result that ended it
+LOST_REASONS = (*REASONS, "refused", "wrong_number", "do_not_call")
+
+
+class LeadError(Exception):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 async def find_patient_by_phone(session: AsyncSession, phone: str | None) -> Patient | None:
@@ -55,12 +65,25 @@ async def create_lead(
         interest=interest,
         note=note,
         stage=LeadStage.NEW,
-        sla_due_at=clinic_time.add_working_minutes(now, SLA_MINUTES),
+        # TZ 4.4: first answer within 15 working minutes
+        sla_due_at=clinic_time.add_working_minutes(now, get_settings().lead_sla_minutes),
         external_id=external_id,
         created_by=created_by,
     )
-    session.add(lead)
-    await session.flush()
+    try:
+        async with session.begin_nested():
+            session.add(lead)
+            await session.flush()
+    except IntegrityError:
+        # the same form delivered twice at once: the other request stored it first
+        existing = (
+            await session.scalar(select(Lead).where(Lead.external_id == external_id))
+            if external_id
+            else None
+        )
+        if existing is None:
+            raise
+        return existing, False
     await emit(session, "lead.created", lead=lead)
     return lead, True
 
@@ -110,6 +133,36 @@ def mark_contacted(lead: Lead) -> None:
         lead.first_response_at = clinic_time.now()
     if lead.stage is LeadStage.NEW:
         lead.stage = LeadStage.CONTACTED
+
+
+async def change_stage(
+    session: AsyncSession,
+    lead: Lead,
+    stage: LeadStage,
+    *,
+    lost_reason: str | None = None,
+    user_id: uuid.UUID | None = None,
+    contacted: bool = True,
+) -> None:
+    """The only way a lead moves between stages; task rules react to `lead.stage_changed`
+    (e.g. a lost or booked inquiry no longer needs its open calls). `contacted=False` when
+    nobody actually spoke to the person (a wrong number is not a first response)."""
+    if lost_reason is not None and lost_reason not in LOST_REASONS:
+        raise LeadError("unknown_reason")
+    if stage is LeadStage.LOST:
+        lost_reason = lost_reason or lead.lost_reason
+        if not lost_reason:
+            raise LeadError("reason_required")
+        lead.lost_reason = lost_reason
+    elif lost_reason is not None:
+        lead.lost_reason = lost_reason
+    old = lead.stage
+    if contacted and stage is not LeadStage.NEW:
+        mark_contacted(lead)
+    lead.stage = stage
+    if old is stage:
+        return
+    await emit(session, "lead.stage_changed", lead=lead, old=old, new=stage, user_id=user_id)
 
 
 async def _merge_patients(session: AsyncSession, target: uuid.UUID, source: uuid.UUID) -> None:

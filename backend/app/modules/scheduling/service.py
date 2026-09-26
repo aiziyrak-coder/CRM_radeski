@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.events import emit
 from app.modules.catalog.models import (
+    Branch,
     Doctor,
     DoctorService,
     Resource,
@@ -30,6 +31,7 @@ from app.modules.scheduling.models import (
     DoctorSchedule,
     Recommendation,
 )
+from app.modules.users.models import Role, User
 
 SLOT_STEP = timedelta(minutes=15)
 # don't offer a time that starts in less than this
@@ -191,17 +193,25 @@ async def _devices(session: AsyncSession, branch_id: uuid.UUID, device_type: str
     )
 
 
-async def earliest_by_course(
-    session: AsyncSession, patient_id: uuid.UUID | None, services: list[Service]
-) -> date | None:
-    """A course procedure can't be repeated before min_interval_days since the last session."""
+async def course_blocked_days(
+    session: AsyncSession,
+    patient_id: uuid.UUID | None,
+    services: list[Service],
+    exclude_appointment_id: uuid.UUID | None = None,
+) -> list[tuple[date, date]]:
+    """Days (inclusive ranges) on which a course procedure can't be booked: closer than
+    min_interval_days to another session of the same service, before or after it.
+
+    Cancelled, no-show and rescheduled visits don't count, and neither does the appointment
+    being rescheduled (exclude_appointment_id), so moving a session isn't blocked by itself.
+    """
     if not patient_id:
-        return None
-    earliest: date | None = None
+        return []
+    blocked: list[tuple[date, date]] = []
     for service in services:
         if not service.min_interval_days:
             continue
-        last = await session.scalar(
+        stmt = (
             select(Appointment.starts_at)
             .join(AppointmentService, AppointmentService.appointment_id == Appointment.id)
             .where(
@@ -209,13 +219,24 @@ async def earliest_by_course(
                 AppointmentService.service_id == service.id,
                 Appointment.status.in_(ACTIVE_STATUSES),
             )
-            .order_by(Appointment.starts_at.desc())
-            .limit(1)
         )
-        if last:
-            candidate = last.astimezone(tz()).date() + timedelta(days=service.min_interval_days)
-            earliest = max(earliest, candidate) if earliest else candidate
-    return earliest
+        if exclude_appointment_id:
+            stmt = stmt.where(Appointment.id != exclude_appointment_id)
+        gap = timedelta(days=service.min_interval_days - 1)
+        for starts_at in await session.scalars(stmt):
+            day = starts_at.astimezone(tz()).date()
+            blocked.append((day - gap, day + gap))
+    return blocked
+
+
+def _is_blocked(day: date, blocked: list[tuple[date, date]]) -> bool:
+    return any(lo <= day <= hi for lo, hi in blocked)
+
+
+def _first_free_day(day: date, blocked: list[tuple[date, date]]) -> date:
+    while hit := next(((lo, hi) for lo, hi in blocked if lo <= day <= hi), None):
+        day = hit[1] + timedelta(days=1)
+    return day
 
 
 # --- slot finder ------------------------------------------------------------------------------
@@ -233,6 +254,7 @@ async def find_slots(
     part_of_day: str | None = None,
     limit: int = 3,
     now: datetime | None = None,
+    exclude_appointment_id: uuid.UUID | None = None,
 ) -> list[Slot]:
     services = await load_services(session, service_ids)
     duration = total_duration(services)
@@ -243,8 +265,8 @@ async def find_slots(
 
     now = now or datetime.now(UTC)
     first_day = max(date_from or now.astimezone(tz()).date(), now.astimezone(tz()).date())
-    if (course := await earliest_by_course(session, patient_id, services)) and course > first_day:
-        first_day = course
+    blocked = await course_blocked_days(session, patient_id, services, exclude_appointment_id)
+    first_day = _first_free_day(first_day, blocked)
     horizon_start, _ = local_day_bounds(first_day)
     horizon_end = horizon_start + timedelta(days=days)
 
@@ -261,6 +283,8 @@ async def find_slots(
     slots: list[Slot] = []
     for offset in range(days):
         day = first_day + timedelta(days=offset)
+        if _is_blocked(day, blocked):
+            continue
         day_slots: list[Slot] = []
         for doctor in doctors:
             for w_start, w_end in await working_windows(session, doctor, branch_id, day):
@@ -320,9 +344,22 @@ async def create_appointment(
     doctor = await session.get(Doctor, doctor_id)
     if doctor is None or not doctor.is_active:
         raise SchedulingError("doctor_not_found")
+    branch = await session.get(Branch, branch_id)
+    if branch is None or not branch.is_active:
+        raise SchedulingError("branch_not_found")
     services = await load_services(session, service_ids)
+    if not await eligible_doctors(session, services, doctor.id):
+        raise SchedulingError("doctor_not_eligible")
     if starts_at.tzinfo is None:
         raise SchedulingError("timezone_required")
+    branches = set(
+        await session.scalars(
+            select(DoctorSchedule.branch_id).where(DoctorSchedule.doctor_id == doctor.id)
+        )
+    )
+    if branches and branch_id not in branches:
+        # a doctor with a timetable works only at its branches (even with an hours override)
+        raise SchedulingError("doctor_not_at_branch")
     ends_at = starts_at + total_duration(services)
 
     if not allow_outside_hours:
@@ -367,7 +404,7 @@ async def create_appointment(
     except IntegrityError as exc:
         if "no_doctor_overlap" in str(exc.orig) or "no_resource_overlap" in str(exc.orig):
             raise SchedulingError("slot_taken") from None
-        raise
+        raise SchedulingError("invalid_reference") from None
     await emit(session, "appointment.created", appointment=appointment, patient=patient)
     return appointment
 
@@ -441,6 +478,34 @@ async def reschedule(
         new=S.RESCHEDULED,
     )
     return new
+
+
+# --- doctor data scope -------------------------------------------------------------------------
+# ARXITEKTURA 5: a doctor sees only their own patients (those with an appointment with them).
+
+
+async def doctor_of(session: AsyncSession, user: User) -> Doctor | None:
+    return await session.scalar(select(Doctor).where(Doctor.user_id == user.id))
+
+
+async def doctor_has_patient(
+    session: AsyncSession, doctor_id: uuid.UUID, patient_id: uuid.UUID
+) -> bool:
+    return bool(
+        await session.scalar(
+            select(Appointment.id)
+            .where(Appointment.doctor_id == doctor_id, Appointment.patient_id == patient_id)
+            .limit(1)
+        )
+    )
+
+
+async def can_see_patient(session: AsyncSession, user: User, patient_id: uuid.UUID) -> bool:
+    """False only for a doctor who has never had an appointment with the patient."""
+    if user.role is not Role.DOCTOR:
+        return True
+    doctor = await doctor_of(session, user)
+    return doctor is not None and await doctor_has_patient(session, doctor.id, patient_id)
 
 
 async def day_appointments(

@@ -65,7 +65,8 @@ async def _confirm_booking(session: AsyncSession, p: dict[str, Any]) -> None:
 async def _unreachable(session: AsyncSession, p: dict[str, Any]) -> None:
     """TZ 4.5: after the second unanswered attempt the patient gets script 11 as a message."""
     task: Task = p["task"]
-    if p["outcome"] is not Outcome.NO_ANSWER or task.attempts != 2 or not task.patient_id:
+    # unanswered attempts only: a "call me later" in between doesn't count
+    if p["outcome"] is not Outcome.NO_ANSWER or task.no_answer_count != 2 or not task.patient_id:
         return
     patient = await session.get(Patient, task.patient_id)
     if patient is None or patient.do_not_call:

@@ -4,7 +4,7 @@ import uuid
 from datetime import date, timedelta
 from typing import Any
 
-from sqlalchemy import Select, exists, func, select
+from sqlalchemy import Select, and_, case, exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clinic_time
@@ -12,7 +12,34 @@ from app.modules.campaigns.models import Campaign, CampaignStatus
 from app.modules.patients.models import Patient, PatientCondition
 from app.modules.scheduling.models import ACTIVE_STATUSES, Appointment
 from app.modules.tasks import service as tasks
-from app.modules.tasks.models import REACHED, Outcome, Task, TaskStatus, TaskType
+from app.modules.tasks.models import (
+    REACHED,
+    TASK_DEFAULTS,
+    Outcome,
+    Task,
+    TaskStatus,
+    TaskType,
+)
+
+C = CampaignStatus
+# the script a campaign task gets when the campaign names none
+DEFAULT_SCRIPT = TASK_DEFAULTS[TaskType.CAMPAIGN][1]
+# FINISHED is final; a paused campaign can be resumed
+TRANSITIONS: dict[CampaignStatus, set[CampaignStatus]] = {
+    C.DRAFT: {C.ACTIVE, C.FINISHED},
+    C.ACTIVE: {C.PAUSED, C.FINISHED},
+    C.PAUSED: {C.ACTIVE, C.FINISHED},
+    C.FINISHED: set(),
+}
+# a task the pause/finish cancelled before anyone called: it doesn't use up the patient
+# (a resumed campaign may call them) nor the day's limit
+_UNUSED = and_(Task.status == TaskStatus.CANCELLED, Task.attempts == 0)
+
+
+class CampaignError(Exception):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 def segment_query(segment: dict[str, Any]) -> Select:
@@ -63,19 +90,21 @@ async def segment_size(session: AsyncSession, segment: dict[str, Any]) -> int:
 async def generate_for_campaign(session: AsyncSession, campaign: Campaign) -> int:
     """Adds up to the remaining daily limit; skips patients already called in this campaign,
     patients with any open task and patients with an upcoming appointment."""
-    if campaign.status is not CampaignStatus.ACTIVE:
+    if campaign.status is not CampaignStatus.ACTIVE or _ended(campaign):
         return 0
     now = clinic_time.now()
     start, _ = clinic_time.day_bounds(clinic_time.today())
     created_today = await session.scalar(
         select(func.count())
         .select_from(Task)
-        .where(Task.campaign_id == campaign.id, Task.created_at >= start)
+        .where(Task.campaign_id == campaign.id, Task.created_at >= start, ~_UNUSED)
     )
     remaining = campaign.daily_limit - (created_today or 0)
     if remaining <= 0:
         return 0
-    already = exists().where(Task.patient_id == Patient.id, Task.campaign_id == campaign.id)
+    already = exists().where(
+        Task.patient_id == Patient.id, Task.campaign_id == campaign.id, ~_UNUSED
+    )
     open_task = exists().where(Task.patient_id == Patient.id, Task.status == TaskStatus.OPEN)
     upcoming = exists().where(
         Appointment.patient_id == Patient.id,
@@ -90,6 +119,41 @@ async def generate_for_campaign(session: AsyncSession, campaign: Campaign) -> in
             script_code=script_for(campaign, pid), dedupe_key=f"camp:{campaign.id}:{pid}",
         )  # fmt: skip
     return created
+
+
+def _ended(campaign: Campaign) -> bool:
+    return campaign.ends_on is not None and campaign.ends_on < clinic_time.now()
+
+
+async def cancel_open_tasks(session: AsyncSession, campaign: Campaign) -> int:
+    """A paused or finished campaign leaves nothing in the operators' queue."""
+    result = await session.execute(
+        update(Task)
+        .where(Task.campaign_id == campaign.id, Task.status == TaskStatus.OPEN)
+        .values(
+            status=TaskStatus.CANCELLED,
+            completed_at=clinic_time.now(),
+            # frees the dedupe key of a never-called task so a resumed campaign can call them
+            dedupe_key=case((Task.attempts == 0, None), else_=Task.dedupe_key),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount or 0
+
+
+async def set_status(session: AsyncSession, campaign: Campaign, new: CampaignStatus) -> None:
+    if new is campaign.status:
+        return
+    if new not in TRANSITIONS[campaign.status]:
+        raise CampaignError("invalid_transition")
+    if new is C.ACTIVE and _ended(campaign):
+        raise CampaignError("campaign_ended")
+    campaign.status = new
+    if new in (C.PAUSED, C.FINISHED):
+        await cancel_open_tasks(session, campaign)
+    elif new is C.ACTIVE:
+        # start today rather than waiting for tomorrow's morning run
+        await generate_for_campaign(session, campaign)
 
 
 def script_for(campaign: Campaign, patient_id: uuid.UUID) -> str | None:
@@ -119,7 +183,8 @@ async def ab_stats(session: AsyncSession, campaign: Campaign) -> list[dict[str, 
         if outcome is Outcome.BOOKED:
             v["booked"] += n
     out = []
-    for variant, code in (("a", campaign.script_code), ("b", campaign.script_code_b)):
+    script_a = campaign.script_code or DEFAULT_SCRIPT  # campaigns created before it was stored
+    for variant, code in (("a", script_a), ("b", campaign.script_code_b)):
         v = by.get(code, {"tasks": 0, "done": 0, "reached": 0, "booked": 0})
         rate = round(100 * v["booked"] / v["reached"], 1) if v["reached"] else None
         out.append({"variant": variant, "script_code": code, **v, "booking_rate": rate})
@@ -131,8 +196,8 @@ async def generate_all(session: AsyncSession) -> int:
     for campaign in await session.scalars(
         select(Campaign).where(Campaign.status == CampaignStatus.ACTIVE)
     ):
-        if campaign.ends_on and campaign.ends_on < clinic_time.now():
-            campaign.status = CampaignStatus.FINISHED
+        if _ended(campaign):
+            await set_status(session, campaign, CampaignStatus.FINISHED)
             continue
         total += await generate_for_campaign(session, campaign)
     return total

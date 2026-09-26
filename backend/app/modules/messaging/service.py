@@ -6,8 +6,9 @@ from collections import defaultdict
 from datetime import datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clinic_time
@@ -63,6 +64,14 @@ DEFAULT_TEMPLATES = [
 ]  # fmt: skip
 
 
+def telegram_msg_id(message_id: Any, business: str | None) -> str | None:
+    """Telegram numbers messages per chat, and a person's chat with the bot and with the
+    clinic's Business account share one chat id: keep the two id sequences apart."""
+    if message_id is None:
+        return None
+    return f"b{message_id}" if business else str(message_id)
+
+
 def e164(raw: str | None) -> str | None:
     try:
         return normalize_uz_phone(raw) if raw else None
@@ -103,18 +112,27 @@ async def render(
 
 
 async def get_conversation(
-    session: AsyncSession, channel: Channel, external_id: str, *, title: str | None = None
+    session: AsyncSession,
+    channel: Channel,
+    external_id: str,
+    *,
+    title: str | None = None,
+    lock: bool = False,
 ) -> Conversation:
-    conv = await session.scalar(
-        select(Conversation).where(
-            Conversation.channel == channel, Conversation.external_id == external_id
-        )
+    """The chat (created on first use). Two webhooks for a new chat at once create it once;
+    `lock` holds the row until commit so concurrent messages of one chat are handled in turn."""
+    await session.execute(
+        insert(Conversation)
+        .values(id=uuid.uuid4(), channel=channel, external_id=external_id, title=title, unread=0)
+        .on_conflict_do_nothing(index_elements=["channel", "external_id"])
     )
-    if conv is None:
-        conv = Conversation(channel=channel, external_id=external_id, title=title, unread=0)
-        session.add(conv)
-        await session.flush()
-    elif title and not conv.title:
+    stmt = select(Conversation).where(
+        Conversation.channel == channel, Conversation.external_id == external_id
+    )
+    if lock:
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    conv = (await session.scalars(stmt)).one()
+    if title and not conv.title:
         conv.title = title
     return conv
 
@@ -136,6 +154,36 @@ async def set_phone(session: AsyncSession, conv: Conversation, raw: str) -> None
         lead.phone = phone
 
 
+async def store_message(
+    session: AsyncSession,
+    conv: Conversation,
+    direction: Direction,
+    text: str,
+    status: MessageStatus,
+    external_id: str | None,
+    now: datetime,
+) -> uuid.UUID | None:
+    """A received (or sent-elsewhere) message; None when this provider id is already stored."""
+    msg_id = uuid.uuid4()
+    stmt = (
+        insert(Message)
+        .values(
+            id=msg_id, conversation_id=conv.id, direction=direction, text=text, status=status,
+            external_id=external_id, created_at=now, attempts=0,
+            sent_at=now if direction is Direction.OUT else None,
+        )
+        .on_conflict_do_nothing(
+            index_elements=["conversation_id", "direction", "external_id"],
+            index_where=Message.external_id.isnot(None),
+        )
+        .returning(Message.id)
+    )  # fmt: skip
+    if (await session.execute(stmt)).scalar() is None:
+        return None
+    conv.last_message_at = now
+    return msg_id
+
+
 async def receive(
     session: AsyncSession,
     channel: Channel,
@@ -146,21 +194,24 @@ async def receive(
     external_msg_id: str | None = None,
     phone: str | None = None,
     business_connection_id: str | None = None,
-) -> Message:
-    """An inbound chat message. A chat without an open inquiry becomes one (-> operator task)."""
+) -> Message | None:
+    """An inbound chat message. A chat without an open inquiry becomes one (-> operator task).
+
+    None = the provider re-delivered a message we already have (webhook retry)."""
     now = clinic_time.now()
-    conv = await get_conversation(session, channel, external_id, title=title)
+    # locked: two messages of one chat arriving together must not open two inquiries
+    conv = await get_conversation(session, channel, external_id, title=title, lock=True)
+    msg_id = await store_message(
+        session, conv, Direction.IN, text, MessageStatus.RECEIVED, external_msg_id, now
+    )
+    if msg_id is None:
+        return None
+    msg = await session.get(Message, msg_id)
     if business_connection_id:
         conv.business_connection_id = business_connection_id
     if phone:
         await set_phone(session, conv, phone)
-    msg = Message(
-        conversation_id=conv.id, direction=Direction.IN, text=text, status=MessageStatus.RECEIVED,
-        external_id=external_msg_id, created_at=now, attempts=0,
-    )  # fmt: skip
-    session.add(msg)
     conv.unread += 1
-    conv.last_message_at = now
 
     lead = await session.get(Lead, conv.lead_id) if conv.lead_id else None
     # a "thank you" right after the inquiry was closed shouldn't open a new one
@@ -224,43 +275,131 @@ async def queue(
     return await session.get(Message, msg_id)
 
 
+async def _send(conv: Conversation, msg: Message) -> str:
+    if conv.channel is Channel.TELEGRAM:
+        bot = get_telegram()
+        if bot is None:
+            raise SendError("telegram_off")
+        sent = await bot.send_message(
+            conv.external_id, msg.text, business_connection_id=conv.business_connection_id
+        )
+        return telegram_msg_id(sent, conv.business_connection_id)
+    if conv.channel is Channel.INSTAGRAM:
+        ig = get_instagram()
+        if ig is None:
+            raise SendError("instagram_off")
+        return await ig.send_message(conv.external_id, msg.text)
+    sms = get_sms_sender()
+    if sms is None:
+        raise SendError("sms_off")
+    return await sms.send(conv.external_id, msg.text, str(msg.id))
+
+
+async def _finish(session: AsyncSession, msg: Message, values: dict[str, Any]) -> None:
+    """Stores the outcome of a send and commits."""
+    ext = values.get("external_id")
+    msg_id, conv_id = msg.id, msg.conversation_id  # a rollback expires `msg`
+    for attempt in range(2):
+        try:
+            if ext:
+                # Instagram may deliver the echo of this very message before we stored its id
+                await session.execute(
+                    delete(Message).where(
+                        Message.conversation_id == conv_id,
+                        Message.direction == Direction.OUT,
+                        Message.external_id == ext,
+                        Message.id != msg_id,
+                    )
+                )
+            await session.execute(update(Message).where(Message.id == msg_id).values(**values))
+            await session.commit()
+            return
+        except IntegrityError:  # the echo was committed between the delete and the update
+            await session.rollback()
+            if attempt:
+                raise
+
+
 async def deliver(session: AsyncSession, message_id: uuid.UUID) -> MessageStatus | None:
-    msg = await session.get(Message, message_id)
+    """Sends one queued message; None = not ours to send (already taken, sent or missing).
+
+    Commits twice: the claim (queued -> sending) before the provider is called, so the per-minute
+    job and the immediate task can never both send it, and the outcome afterwards."""
+    now = clinic_time.now()
+    msg = await session.get(Message, message_id, populate_existing=True)
     if msg is None or msg.status is not MessageStatus.QUEUED:
         return None
-    if msg.send_after and msg.send_after > clinic_time.now():
+    if msg.send_after and msg.send_after > now:
         return msg.status
+    if msg.sent_by is None and (allowed := _next_allowed(now)) > now:
+        # automatic messages never go out at night, even when they fell due earlier (an outage,
+        # a retry after a failure at 19:59)
+        await session.execute(
+            update(Message)
+            .where(Message.id == msg.id, Message.status == MessageStatus.QUEUED)
+            .values(send_after=allowed)
+        )
+        await session.commit()
+        return MessageStatus.QUEUED
+    claimed = await session.scalar(
+        update(Message)
+        .where(Message.id == msg.id, Message.status == MessageStatus.QUEUED)
+        .values(status=MessageStatus.SENDING, claimed_at=now)
+        .returning(Message.id)
+    )
+    await session.commit()
+    if claimed is None:
+        return None  # another worker took it
+    await session.refresh(msg)
     conv = await session.get(Conversation, msg.conversation_id)
     try:
-        if conv.channel is Channel.TELEGRAM:
-            bot = get_telegram()
-            if bot is None:
-                raise SendError("telegram_off")
-            ext = await bot.send_message(
-                conv.external_id, msg.text, business_connection_id=conv.business_connection_id
-            )
-        elif conv.channel is Channel.INSTAGRAM:
-            ig = get_instagram()
-            if ig is None:
-                raise SendError("instagram_off")
-            ext = await ig.send_message(conv.external_id, msg.text)
-        else:
-            sms = get_sms_sender()
-            if sms is None:
-                raise SendError("sms_off")
-            ext = await sms.send(conv.external_id, msg.text, str(msg.id))
+        ext = await _send(conv, msg)
     except SendError as exc:
-        msg.attempts += 1
-        msg.error = str(exc)[:1000]
-        if msg.attempts >= MAX_ATTEMPTS or str(exc).endswith("_off"):
-            msg.status = MessageStatus.FAILED
+        attempts = msg.attempts + 1
+        final = attempts >= MAX_ATTEMPTS or str(exc).endswith("_off")
         log.warning("message %s not sent: %s", msg.id, exc)
+        values = {
+            "attempts": attempts,
+            "error": str(exc)[:1000],
+            "status": MessageStatus.FAILED if final else MessageStatus.QUEUED,
+        }
+    except Exception as exc:
+        # the provider may have accepted it (e.g. an unreadable answer): never resend blindly
+        log.exception("message %s: unexpected error while sending", msg.id)
+        values = {
+            "attempts": msg.attempts + 1,
+            "error": f"unexpected: {type(exc).__name__}",
+            "status": MessageStatus.FAILED,
+        }
     else:
-        msg.status, msg.external_id, msg.sent_at, msg.error = (
-            MessageStatus.SENT, ext, clinic_time.now(), None,
-        )  # fmt: skip
-    await session.flush()
+        values = {
+            "status": MessageStatus.SENT, "external_id": ext, "sent_at": clinic_time.now(),
+            "error": None,
+        }  # fmt: skip
+    await _finish(session, msg, values)
+    await session.refresh(msg)
     return msg.status
+
+
+async def recover_interrupted(session: AsyncSession) -> int:
+    """Messages a worker took but never finished (crash, restart mid-send).
+
+    Marked failed rather than resent: whether the provider already delivered it is unknown, and
+    a duplicate SMS is worse than the operator seeing "not sent" and deciding."""
+    timeout = timedelta(minutes=get_settings().messages_sending_timeout_minutes)
+    result = await session.execute(
+        update(Message)
+        .where(
+            Message.status == MessageStatus.SENDING,
+            Message.claimed_at < clinic_time.now() - timeout,
+        )
+        .values(status=MessageStatus.FAILED, error="interrupted")
+        .returning(Message.id)
+    )
+    ids = list(result.scalars())
+    for message_id in ids:
+        log.warning("message %s was interrupted while sending: marked failed", message_id)
+    return len(ids)
 
 
 async def due_messages(session: AsyncSession, limit: int = 100) -> list[uuid.UUID]:
@@ -277,6 +416,21 @@ async def due_messages(session: AsyncSession, limit: int = 100) -> list[uuid.UUI
             .limit(limit)
         )
     )
+
+
+async def deliver_due(session: AsyncSession) -> int:
+    """The per-minute job. Every message is committed on its own: one that breaks doesn't undo
+    the ones already sent (which would send them again next minute)."""
+    await recover_interrupted(session)
+    await session.commit()
+    ids = await due_messages(session)
+    for message_id in ids:
+        try:
+            await deliver(session, message_id)
+        except Exception:
+            log.exception("message %s: delivery crashed", message_id)
+            await session.rollback()
+    return len(ids)
 
 
 # --- patient notifications ---------------------------------------------------------------------
@@ -300,9 +454,9 @@ async def patient_conversation(session: AsyncSession, patient: Patient) -> Conve
         .order_by(PatientPhone.is_primary.desc())
         .limit(1)
     )
-    if not phone or not e164(phone):
+    if not (number := e164(phone)):
         return None
-    conv = await get_conversation(session, Channel.SMS, phone, title=patient.full_name)
+    conv = await get_conversation(session, Channel.SMS, number, title=patient.full_name)
     conv.patient_id = conv.patient_id or patient.id
     return conv
 
@@ -320,8 +474,6 @@ async def notify_patient(
 
 
 async def _merge_patients(session: AsyncSession, target: uuid.UUID, source: uuid.UUID) -> None:
-    from sqlalchemy import update
-
     await session.execute(
         update(Conversation).where(Conversation.patient_id == source).values(patient_id=target)
     )

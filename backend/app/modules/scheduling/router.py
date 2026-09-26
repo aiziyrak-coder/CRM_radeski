@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import delete, select
 
+from app.core import clinic_time
 from app.core.deps import CurrentUser, SessionDep, client_ip, require_roles
 from app.core.events import emit
 from app.modules.audit import service as audit
@@ -34,13 +35,19 @@ OVERRIDE_ROLES = (Role.REGISTRAR, Role.SUPERVISOR, Role.ADMIN)
 
 def _err(exc: service.SchedulingError) -> HTTPException:
     code = status.HTTP_409_CONFLICT
-    if exc.code in ("patient_not_found", "doctor_not_found", "service_not_found"):
+    if exc.code in (
+        "patient_not_found",
+        "doctor_not_found",
+        "service_not_found",
+        "branch_not_found",
+    ):
         code = status.HTTP_404_NOT_FOUND
     elif exc.code in (
         "invalid_transition",
         "reason_required",
         "multiple_devices",
         "timezone_required",
+        "invalid_reference",
     ):
         code = status.HTTP_400_BAD_REQUEST
     return HTTPException(code, detail=exc.code)
@@ -225,7 +232,27 @@ async def _appointment(session: SessionDep, appointment_id: uuid.UUID) -> Appoin
 
 
 async def _doctor_of(session: SessionDep, user: User) -> Doctor | None:
-    return await session.scalar(select(Doctor).where(Doctor.user_id == user.id))
+    return await service.doctor_of(session, user)
+
+
+async def _own_doctor(session: SessionDep, user: User) -> Doctor:
+    doctor = await _doctor_of(session, user)
+    if doctor is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="not_a_doctor")
+    return doctor
+
+
+async def _check_patient_scope(session: SessionDep, user: User, patient_id: uuid.UUID) -> None:
+    """Doctors see only patients they have (had) an appointment with."""
+    if not await service.can_see_patient(session, user, patient_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="forbidden")
+
+
+async def _doctor_or_404(session: SessionDep, doctor_id: uuid.UUID) -> Doctor:
+    doctor = await session.get(Doctor, doctor_id)
+    if doctor is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="doctor_not_found")
+    return doctor
 
 
 # --- weekly schedules -------------------------------------------------------------------------
@@ -242,7 +269,7 @@ async def get_doctor_schedule(
     )
     absences = await session.scalars(
         select(DoctorAbsence)
-        .where(DoctorAbsence.doctor_id == doctor_id, DoctorAbsence.date_to >= date.today())
+        .where(DoctorAbsence.doctor_id == doctor_id, DoctorAbsence.date_to >= clinic_time.today())
         .order_by(DoctorAbsence.date_from)
     )
     return DoctorScheduleOut(
@@ -255,8 +282,7 @@ async def get_doctor_schedule(
 async def set_weekly(
     doctor_id: uuid.UUID, body: WeeklyIn, request: Request, session: SessionDep, user: Planner
 ) -> DoctorScheduleOut:
-    if await session.get(Doctor, doctor_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="doctor_not_found")
+    await _doctor_or_404(session, doctor_id)
     await session.execute(delete(DoctorSchedule).where(DoctorSchedule.doctor_id == doctor_id))
     for row in body.rows:
         session.add(DoctorSchedule(doctor_id=doctor_id, **row.model_dump()))
@@ -270,19 +296,35 @@ async def set_weekly(
 
 @router.post("/schedule/doctors/{doctor_id}/absences", status_code=status.HTTP_201_CREATED)
 async def add_absence(
-    doctor_id: uuid.UUID, body: AbsenceIn, session: SessionDep, _: Planner
+    doctor_id: uuid.UUID, body: AbsenceIn, request: Request, session: SessionDep, user: Planner
 ) -> AbsenceOut:
     if body.date_from > body.date_to:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="from_after_to")
+    await _doctor_or_404(session, doctor_id)
     absence = DoctorAbsence(doctor_id=doctor_id, **body.model_dump())
     session.add(absence)
+    await session.flush()
+    audit.record(
+        session, "schedule.absence_add", user_id=user.id, entity="doctor", entity_id=doctor_id,
+        after={"id": str(absence.id), **body.model_dump(mode="json")}, ip=client_ip(request),
+    )  # fmt: skip
     await session.commit()
     return AbsenceOut.model_validate(absence)
 
 
 @router.delete("/schedule/absences/{absence_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_absence(absence_id: uuid.UUID, session: SessionDep, _: Planner) -> None:
-    await session.execute(delete(DoctorAbsence).where(DoctorAbsence.id == absence_id))
+async def delete_absence(
+    absence_id: uuid.UUID, request: Request, session: SessionDep, user: Planner
+) -> None:
+    absence = await session.get(DoctorAbsence, absence_id)
+    if absence is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="absence_not_found")
+    before = AbsenceOut.model_validate(absence).model_dump(mode="json")
+    await session.delete(absence)
+    audit.record(
+        session, "schedule.absence_delete", user_id=user.id, entity="doctor",
+        entity_id=absence.doctor_id, before=before, ip=client_ip(request),
+    )  # fmt: skip
     await session.commit()
 
 
@@ -342,11 +384,13 @@ async def schedule_day(
 @router.get("/appointments/day")
 async def appointments_day(
     session: SessionDep,
-    _: ScheduleReader,
+    user: ScheduleReader,
     day: Annotated[date, Query(alias="date")],
     branch_id: uuid.UUID | None = None,
     doctor_id: uuid.UUID | None = None,
 ) -> list[AppointmentOut]:
+    if user.role is Role.DOCTOR:
+        doctor_id = (await _own_doctor(session, user)).id  # only their own column
     return await serialize(
         session, await service.day_appointments(session, day, branch_id, doctor_id)
     )
@@ -356,10 +400,8 @@ async def appointments_day(
 async def my_day(
     session: SessionDep, user: CurrentUser, day: Annotated[date | None, Query(alias="date")] = None
 ) -> list[AppointmentOut]:
-    doctor = await _doctor_of(session, user)
-    if doctor is None:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="not_a_doctor")
-    rows = await service.day_appointments(session, day or date.today(), doctor_id=doctor.id)
+    doctor = await _own_doctor(session, user)
+    rows = await service.day_appointments(session, day or clinic_time.today(), doctor_id=doctor.id)
     return await serialize(session, rows)
 
 
@@ -375,6 +417,8 @@ async def slots(
     days: Annotated[int, Query(ge=1, le=60)] = 14,
     part: Literal["morning", "afternoon", "evening"] | None = None,
     limit: Annotated[int, Query(ge=1, le=20)] = 3,
+    # when rescheduling: the appointment being moved doesn't count for the course interval
+    exclude_appointment_id: uuid.UUID | None = None,
 ) -> list[SlotOut]:
     try:
         found = await service.find_slots(
@@ -387,6 +431,7 @@ async def slots(
             days=days,
             part_of_day=part,
             limit=limit,
+            exclude_appointment_id=exclude_appointment_id,
         )
     except service.SchedulingError as exc:
         raise _err(exc) from None
@@ -401,8 +446,9 @@ async def slots(
 
 @router.get("/appointments/patient/{patient_id}")
 async def patient_appointments(
-    patient_id: uuid.UUID, session: SessionDep, _: ScheduleReader
+    patient_id: uuid.UUID, session: SessionDep, user: ScheduleReader
 ) -> list[AppointmentOut]:
+    await _check_patient_scope(session, user, patient_id)
     rows = await session.scalars(
         select(Appointment)
         .where(Appointment.patient_id == patient_id)
@@ -515,13 +561,32 @@ async def create_recommendation(
 ) -> RecommendationOut:
     if user.role not in (Role.DOCTOR, Role.REGISTRAR, Role.SUPERVISOR, Role.ADMIN):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="forbidden")
-    if await session.get(Patient, body.patient_id) is None:
+    patient = await session.get(Patient, body.patient_id)
+    if patient is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="patient_not_found")
-    doctor = await _doctor_of(session, user)
-    doctor_id = doctor.id if doctor else None
-    if body.appointment_id and doctor_id is None:
+    if patient.merged_into_id:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="patient_merged")
+    appt = None
+    if body.appointment_id:
         appt = await session.get(Appointment, body.appointment_id)
-        doctor_id = appt.doctor_id if appt else None
+        if appt is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="appointment_not_found")
+        if appt.patient_id != patient.id:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="appointment_patient_mismatch")
+    if body.service_id and await session.get(Service, body.service_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="service_not_found")
+    doctor = await _doctor_of(session, user)
+    if user.role is Role.DOCTOR:
+        # a doctor recommends only for their own patients
+        if doctor is None:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="not_a_doctor")
+        if appt:
+            own = appt.doctor_id == doctor.id
+        else:
+            own = await service.doctor_has_patient(session, doctor.id, patient.id)
+        if not own:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="forbidden")
+    doctor_id = doctor.id if doctor else (appt.doctor_id if appt else None)
     rec = Recommendation(**body.model_dump(), doctor_id=doctor_id, created_by=user.id)
     session.add(rec)
     await session.flush()
@@ -536,8 +601,9 @@ async def create_recommendation(
 
 @router.get("/recommendations/patient/{patient_id}")
 async def patient_recommendations(
-    patient_id: uuid.UUID, session: SessionDep, _: ScheduleReader
+    patient_id: uuid.UUID, session: SessionDep, user: ScheduleReader
 ) -> list[RecommendationOut]:
+    await _check_patient_scope(session, user, patient_id)
     rows = await session.scalars(
         select(Recommendation)
         .where(Recommendation.patient_id == patient_id)

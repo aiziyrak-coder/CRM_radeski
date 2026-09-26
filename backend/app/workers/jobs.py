@@ -56,9 +56,13 @@ def campaigns() -> int:
 
 @celery_app.task(name="jobs.sync_catalog")
 def sync_catalog() -> dict[str, int]:
-    from app.modules.catalog.sync import sync_from_site
+    from app.modules.catalog.sync import SyncAbortedError, sync_from_site
 
-    return dict(_run(sync_from_site))
+    try:
+        return dict(_run(sync_from_site))
+    except SyncAbortedError as exc:  # the site answered with an empty/partial list: keep ours
+        log.warning("catalog sync aborted, nothing changed: %s", exc)
+        return {"aborted": 1}
 
 
 @celery_app.task(name="jobs.sync_diagnoses")
@@ -112,6 +116,14 @@ def retry_recordings() -> int:
     return _run(run)
 
 
+@celery_app.task(name="jobs.close_stale_calls")
+def close_stale_calls() -> int:
+    """Every 10 min: calls whose hangup report never arrived (CRM down at that moment)."""
+    from app.modules.telephony.service import close_stale_calls as run
+
+    return _run(run)
+
+
 @celery_app.task(name="jobs.analyze_call")
 def analyze_call(call_id: str) -> str | None:
     """Transcript + QA analysis; a no-op while OPENAI_API_KEY is empty."""
@@ -157,13 +169,7 @@ def deliver_message(message_id: str) -> str | None:
 @celery_app.task(name="jobs.deliver_due")
 def deliver_due() -> int:
     """Every minute: queued messages whose time has come (reminders after quiet hours, retries)."""
-    from app.modules.messaging.service import deliver, due_messages
-
-    async def run(session):
-        ids = await due_messages(session)
-        for message_id in ids:
-            await deliver(session, message_id)
-        return len(ids)
+    from app.modules.messaging.service import deliver_due as run
 
     return _run(run)
 

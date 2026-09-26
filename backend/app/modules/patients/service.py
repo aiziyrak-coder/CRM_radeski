@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.events import emit
 from app.core.text import phone_digits_query, search_key
 from app.modules.patients.models import Patient, PatientCondition, PatientKind, PatientPhone
 from app.modules.patients.schemas import (
@@ -138,6 +139,18 @@ def apply_update(patient: Patient, data: PatientUpdate) -> None:
     patient.search_key = search_key(patient.full_name)
 
 
+async def set_do_not_call(
+    session: AsyncSession, patient: Patient, do_not_call: bool, reason: str | None
+) -> None:
+    """The only way to change the flag; turning it on emits `patient.do_not_call_set` so open
+    outbound call tasks get cancelled (tasks/rules.py)."""
+    patient.do_not_call = do_not_call
+    patient.do_not_call_reason = reason if do_not_call else None
+    await session.flush()
+    if do_not_call:
+        await emit(session, "patient.do_not_call_set", patient=patient)
+
+
 async def add_phone(session: AsyncSession, patient: Patient, item: PhoneIn) -> PatientPhone:
     existing = next((p for p in patient.phones if p.number == item.number), None)
     if existing:
@@ -222,8 +235,25 @@ MergeHook = Callable[[AsyncSession, uuid.UUID, uuid.UUID], Awaitable[None]]
 MERGE_HOOKS: list[MergeHook] = []
 
 
+async def lock_pair(
+    session: AsyncSession, first_id: uuid.UUID, second_id: uuid.UUID
+) -> tuple[Patient | None, Patient | None]:
+    """Row-locks both patients (always in id order, so two concurrent merges of the same pair
+    can't deadlock) and reloads them, so checks see what other transactions committed."""
+    locked: dict[uuid.UUID, Patient | None] = {}
+    for pid in sorted({first_id, second_id}):
+        locked[pid] = await session.scalar(
+            select(Patient)
+            .where(Patient.id == pid)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    return locked[first_id], locked[second_id]
+
+
 async def merge(session: AsyncSession, target: Patient, source: Patient) -> None:
-    """Folds `source` into `target`; `source` stays as a tombstone pointing at `target`."""
+    """Folds `source` into `target`; `source` stays as a tombstone pointing at `target`.
+    Callers lock both rows first (lock_pair)."""
     if target.id == source.id:
         raise MergeError("same_patient")
     if target.merged_into_id or source.merged_into_id:
@@ -265,3 +295,6 @@ async def merge(session: AsyncSession, target: Patient, source: Patient) -> None
 
     source.merged_into_id = target.id
     await session.flush()
+    if target.do_not_call:
+        # the source's open call tasks now belong to a do-not-call patient
+        await emit(session, "patient.do_not_call_set", patient=target)

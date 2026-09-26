@@ -157,3 +157,11 @@ async def test_sync_is_idempotent(client: AsyncClient, doctor: dict) -> None:
     await client.post("/api/diagnoses/sync", headers=doctor)
     again = (await client.post("/api/diagnoses/sync", headers=doctor)).json()
     assert again.get("mappings_suggested", 0) == 0 and again.get("conditions_keyed", 0) == 0
+
+
+async def test_registrars_read_categories_but_do_not_approve(client: AsyncClient) -> None:
+    await make_user("reg", Role.REGISTRAR)
+    reg = bearer(await login(client, "reg"))
+    assert (await client.get("/api/diagnoses/categories", headers=reg)).status_code == 200
+    assert (await client.get("/api/diagnoses/mappings", headers=reg)).status_code == 200
+    assert (await client.post("/api/diagnoses/sync", headers=reg)).status_code == 403

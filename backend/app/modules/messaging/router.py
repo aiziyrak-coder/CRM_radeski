@@ -296,7 +296,10 @@ async def open_sms(patient_id: uuid.UUID, session: SessionDep, _: Agent) -> Conv
         )
         if not phone:
             raise HTTPException(status.HTTP_409_CONFLICT, detail="no_phone")
-        conv = await service.get_conversation(session, Channel.SMS, phone, title=patient.full_name)
+        number = service.e164(phone)
+        if not number:  # a foreign / mistyped number: the SMS provider would reject every message
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="invalid_phone")
+        conv = await service.get_conversation(session, Channel.SMS, number, title=patient.full_name)
         conv.patient_id = patient.id
     await session.commit()
     [out] = await _conversation_out(session, [conv])
@@ -396,9 +399,13 @@ DELIVERED = {"DELIVRD", "DELIVERED", "delivered"}
 FAILED = {"UNDELIV", "EXPIRED", "REJECTD", "FAILED", "failed"}
 
 
-@webhook_router.post("/sms/eskiz", include_in_schema=False)
-async def eskiz_status(request: Request, session: SessionDep) -> dict[str, bool]:
-    """Delivery reports. Only flips the status of a message we sent (nothing else is trusted)."""
+@webhook_router.post("/sms/eskiz/{token}", include_in_schema=False)
+async def eskiz_status(token: str, request: Request, session: SessionDep) -> dict[str, bool]:
+    """Delivery reports. The secret in the URL (set by us in every send) proves they come from
+    Eskiz; only the status of an SMS we sent is flipped."""
+    expected = get_settings().eskiz_callback_secret
+    if not expected or not hmac.compare_digest(expected.encode(), token.encode()):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="bad_secret")
     try:
         data = await request.json()
     except ValueError:
@@ -408,7 +415,15 @@ async def eskiz_status(request: Request, session: SessionDep) -> dict[str, bool]
     if not ids or report not in DELIVERED | FAILED:
         return {"ok": False}
     msg = await session.scalar(
-        select(Message).where(Message.external_id.in_(ids), Message.status == MessageStatus.SENT)
+        select(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(
+            Conversation.channel == Channel.SMS,
+            Message.direction == Direction.OUT,
+            Message.external_id.in_(ids),
+            Message.status == MessageStatus.SENT,
+        )
+        .limit(1)
     )
     if msg:
         msg.status = MessageStatus.DELIVERED if report in DELIVERED else MessageStatus.FAILED

@@ -16,6 +16,12 @@ celery_app.conf.update(
     enable_utc=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # OpenAI calls can wait minutes (flex tier): they run on their own worker (compose
+    # `worker-ai`, queue "ai") so messages, reminders and recordings never queue behind them
+    task_routes={
+        "jobs.analyze_call": {"queue": "ai"},
+        "jobs.weekly_digest": {"queue": "ai"},
+    },
     # ARXITEKTURA 4.1 — times are clinic local (Asia/Tashkent)
     beat_schedule={
         "confirmations-0730": {
@@ -29,6 +35,7 @@ celery_app.conf.update(
         "catalog-0200": {"task": "jobs.sync_catalog", "schedule": crontab(hour=2, minute=0)},
         "diagnoses-0210": {"task": "jobs.sync_diagnoses", "schedule": crontab(hour=2, minute=10)},
         "recordings-retry": {"task": "jobs.retry_recordings", "schedule": crontab(minute="*/30")},
+        "stale-calls-10min": {"task": "jobs.close_stale_calls", "schedule": crontab(minute="*/10")},
         "analyses-retry": {"task": "jobs.retry_analyses", "schedule": crontab(minute="15,45")},
         "messages-every-minute": {"task": "jobs.deliver_due", "schedule": crontab()},
         "reminders-1000": {"task": "jobs.reminders", "schedule": crontab(hour=10, minute=0)},

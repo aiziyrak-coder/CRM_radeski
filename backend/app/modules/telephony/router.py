@@ -165,6 +165,7 @@ class CallOut(BaseModel):
     direction: CallDirection
     status: CallStatus
     phone: str | None
+    caller_raw: str | None = None  # as reported by the PBX, when it isn't a valid Uzbek number
     patient_id: uuid.UUID | None
     patient_name: str | None
     lead_id: uuid.UUID | None

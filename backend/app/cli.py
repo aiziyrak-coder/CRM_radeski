@@ -15,11 +15,12 @@ import sys
 from pathlib import Path
 
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import SessionLocal
 from app.modules.audit import service as audit
 from app.modules.users import service
-from app.modules.users.models import Role
+from app.modules.users.models import Role, User
 from app.modules.users.schemas import UserCreate
 
 
@@ -126,15 +127,20 @@ async def _stt_benchmark(args: argparse.Namespace) -> None:
 async def _reset_totp(username: str) -> None:
     from sqlalchemy import select
 
-    from app.modules.users.models import User
-
     async with SessionLocal() as session:
         user = await session.scalar(select(User).where(User.username == username.lower()))
         if user is None:
             sys.exit(f"Foydalanuvchi topilmadi: {username}")
-        user.totp_enabled, user.totp_secret, user.totp_last_step = False, None, None
+        await reset_totp(session, user)
         await session.commit()
     print(f"{username}: 2FA o'chirildi, keyingi kirishda ilovani qaytadan ulaydi")
+
+
+async def reset_totp(session: AsyncSession, user: User) -> None:
+    """Same effect as the admin API (users/router.py reset_totp): new enrolment, sessions end."""
+    user.totp_enabled, user.totp_secret, user.totp_last_step = False, None, None
+    await service.revoke_all_sessions(session, user.id)
+    audit.record(session, "user.totp_reset", entity="user", entity_id=user.id, after={"via": "cli"})
 
 
 async def _telegram_setup() -> None:
@@ -156,10 +162,13 @@ async def _telegram_setup() -> None:
 
 
 async def _sync_catalog() -> None:
-    from app.modules.catalog.sync import sync_from_site
+    from app.modules.catalog.sync import SyncAbortedError, sync_from_site
 
     async with SessionLocal() as session:
-        counts = await sync_from_site(session)
+        try:
+            counts = await sync_from_site(session)
+        except SyncAbortedError as exc:
+            sys.exit(f"Sinxronlash to'xtatildi, hech narsa o'zgarmadi: {exc}")
         await session.commit()
     for key, value in sorted(counts.items()):
         print(f"  {key:30} {value}")

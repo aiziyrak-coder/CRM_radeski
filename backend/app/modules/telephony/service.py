@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -87,9 +88,10 @@ def e164(raw: str | None) -> str | None:
         return None
 
 
-def phone_of(raw: str | None) -> str | None:
-    """E.164 for Uzbek numbers; anything else (short codes, foreign) is kept as reported."""
-    return e164(raw) or (raw[:32] if raw else None)
+def raw_caller(raw: str | None) -> str | None:
+    """The caller id as the PBX reported it (anonymous, foreign, short codes): display only."""
+    raw = (raw or "").strip()
+    return raw[:64] or None
 
 
 async def _link(session: AsyncSession, call: Call) -> None:
@@ -116,24 +118,34 @@ async def record_event(session: AsyncSession, data: dict[str, str]) -> Call | No
     # the id becomes a file name for the recording: accept Asterisk's UNIQUEID shape only
     if not PBX_ID.fullmatch(pbx_id) or kind not in ("ring", "end"):
         return None
-    call = await session.scalar(select(Call).where(Call.pbx_id == pbx_id))
     direction = CallDirection.OUT if data.get("direction") == "out" else CallDirection.IN
-    if call is None:
-        call = Call(
-            pbx_id=pbx_id,
-            direction=direction,
-            status=CallStatus.RINGING,
-            phone=phone_of(data.get("caller")),
-            started_at=_epoch(data.get("started")) or datetime.now(UTC),
-            callback_requested=False,
+    caller = data.get("caller")
+    # `ring` and `end` of one call may arrive together (or twice): one row, handled in turn
+    await session.execute(
+        insert(Call)
+        .values(
+            id=uuid.uuid4(), pbx_id=pbx_id, direction=direction, status=CallStatus.RINGING,
+            phone=e164(caller), caller_raw=raw_caller(caller),
+            started_at=_epoch(data.get("started")) or datetime.now(UTC), callback_requested=False,
         )
-        session.add(call)
+        .on_conflict_do_nothing(index_elements=["pbx_id"])
+    )  # fmt: skip
+    call = (
+        await session.scalars(
+            select(Call)
+            .where(Call.pbx_id == pbx_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).one()
     if kind == "ring":
         await _link(session, call)
         await session.flush()
         return call
-    if call.status is not CallStatus.RINGING:
-        return call  # the same hangup reported twice
+    # the same hangup reported twice; a call closed by close_stale_calls (no ended_at) still
+    # takes the real report when it finally arrives
+    if call.status is not CallStatus.RINGING and call.ended_at is not None:
+        return call
 
     raw_status = (data.get("status") or "").lower()
     if direction is CallDirection.IN:
@@ -141,7 +153,8 @@ async def record_event(session: AsyncSession, data: dict[str, str]) -> Call | No
     else:
         call.status = OUTBOUND_STATUS.get(raw_status, CallStatus.FAILED)
     call.direction = direction
-    call.phone = phone_of(data.get("caller")) or call.phone
+    if raw_caller(caller):
+        call.phone, call.caller_raw = e164(caller), raw_caller(caller)
     call.started_at = _epoch(data.get("started")) or call.started_at
     call.ended_at = _epoch(data.get("ended")) or datetime.now(UTC)
     call.wait_seconds = _int(data.get("wait"))
@@ -163,6 +176,28 @@ async def record_event(session: AsyncSession, data: dict[str, str]) -> Call | No
     await session.flush()
     await emit(session, "call.finished", call=call)
     return call
+
+
+async def close_stale_calls(session: AsyncSession) -> int:
+    """Calls still "ringing" long after they began: the hangup report was lost (CRM restarting,
+    network). Closed as missed so the missed-call rule still gets the patient called back.
+    ended_at stays empty (unknown): a late real report still replaces this guess."""
+    cutoff = datetime.now(UTC) - timedelta(minutes=get_settings().pbx_ringing_timeout_minutes)
+    stale = list(
+        await session.scalars(
+            select(Call)
+            .where(Call.status == CallStatus.RINGING, Call.started_at < cutoff)
+            .with_for_update(skip_locked=True)
+        )
+    )
+    for call in stale:
+        call.status = CallStatus.MISSED if call.direction is CallDirection.IN else CallStatus.FAILED
+        call.talk_seconds = 0
+        await _link(session, call)
+        log.warning("call %s: no hangup report, closed as %s", call.pbx_id, call.status.value)
+        await session.flush()
+        await emit(session, "call.finished", call=call)
+    return len(stale)
 
 
 # --- recordings -------------------------------------------------------------------------------
@@ -188,10 +223,11 @@ def convert_recording(pbx_id: str) -> str | None:
     """
     base = recordings_dir()
     operator, patient = base / f"{pbx_id}-out.wav", base / f"{pbx_id}-in.wav"
+    target = base / f"{pbx_id}.mp3"
     parts = [p for p in (operator, patient) if p.exists() and p.stat().st_size > 44]
     if not parts:
-        return None
-    target = base / f"{pbx_id}.mp3"
+        # converted before, but the result wasn't stored (worker died before the commit)
+        return target.name if target.is_file() and target.stat().st_size > 0 else None
     if len(parts) == 2:
         length = max(_duration(operator), _duration(patient))
         cmd = [
@@ -211,7 +247,14 @@ def convert_recording(pbx_id: str) -> str | None:
 async def process_recording(
     session: AsyncSession, call_id: uuid.UUID, *, retry: bool = False
 ) -> RecordingStatus | None:
-    call = await session.get(Call, call_id)
+    # locked for the conversion: the queued task and the 30-min retry must not both convert
+    # (one would delete the WAVs under the other); whoever finds it locked skips it
+    call = await session.scalar(
+        select(Call)
+        .where(Call.id == call_id)
+        .with_for_update(skip_locked=True)
+        .execution_options(populate_existing=True)
+    )
     allowed = (
         (RecordingStatus.PENDING, RecordingStatus.FAILED) if retry else (RecordingStatus.PENDING,)
     )
@@ -244,6 +287,7 @@ async def retry_recordings(session: AsyncSession) -> int:
     )
     for call_id in ids:
         await process_recording(session, call_id, retry=True)
+        await session.commit()  # releases the row lock; keeps the ones done if a later one fails
     return len(ids)
 
 

@@ -47,6 +47,7 @@ class TaskOut(BaseModel):
     due_at: datetime
     overdue: bool
     attempts: int
+    no_answer_count: int
     last_attempt_at: datetime | None
     outcome: Outcome | None
     outcome_reason: str | None
@@ -133,7 +134,8 @@ async def serialize(session: SessionDep, rows: list[Task]) -> list[TaskOut]:
             TaskOut(
                 id=t.id, type=t.type, status=t.status, priority=t.priority, due_at=t.due_at,
                 overdue=t.status is TaskStatus.OPEN and t.due_at < now,
-                attempts=t.attempts, last_attempt_at=t.last_attempt_at, outcome=t.outcome,
+                attempts=t.attempts, no_answer_count=t.no_answer_count,
+                last_attempt_at=t.last_attempt_at, outcome=t.outcome,
                 outcome_reason=t.outcome_reason, note=t.note, script_code=t.script_code,
                 patient_id=t.patient_id, patient_name=name,
                 patient_phone=phone or (lead.phone if lead else None),
@@ -253,6 +255,8 @@ async def shift_notes(
         .limit(10)
     )
     if since:
+        if not 2000 <= since.year <= 2100:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad_range")
         stmt = stmt.where(ShiftNote.created_at >= clinic_time.day_bounds(since)[0])
     rows = await session.execute(stmt)
     return [

@@ -32,6 +32,26 @@ KPI_LABELS = {
     "repeat_rate": "Qayta yozuv, % / Повторная запись, %",
     "returned_patients": "Qaytarilgan bemorlar / Возвращённые пациенты",
 }
+MIN_YEAR, MAX_YEAR = 2000, 2100  # beyond this a date is a typo (and 9999-12-31 overflows)
+MAX_RANGE_DAYS = 366
+
+
+def _check_day(day: date) -> None:
+    if not MIN_YEAR <= day.year <= MAX_YEAR:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad_range")
+
+
+def _check_range(date_from: date, date_to: date) -> None:
+    _check_day(date_from)
+    _check_day(date_to)
+    if date_from > date_to or (date_to - date_from).days > MAX_RANGE_DAYS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad_range")
+
+
+@router.get("/operators")
+async def operators(session: SessionDep, _: Manager) -> list[dict[str, Any]]:
+    """Who the daily report can be filtered by: active operators and supervisors."""
+    return await service.operators(session)
 
 
 @router.get("/daily")
@@ -46,6 +66,8 @@ async def daily(
         user_id = user.id
     elif user.role not in (Role.SUPERVISOR, Role.OWNER, Role.ADMIN):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="forbidden")
+    if day is not None:
+        _check_day(day)
     return await service.daily(session, day or clinic_time.today(), user_id)
 
 
@@ -56,8 +78,7 @@ async def kpi(
     date_from: Annotated[date, Query(alias="from")],
     date_to: Annotated[date, Query(alias="to")],
 ) -> dict[str, Any]:
-    if date_from > date_to or (date_to - date_from).days > 366:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="bad_range")
+    _check_range(date_from, date_to)
     return await service.kpi(session, date_from, date_to)
 
 
@@ -68,6 +89,7 @@ async def kpi_xlsx(
     date_from: Annotated[date, Query(alias="from")],
     date_to: Annotated[date, Query(alias="to")],
 ) -> Response:
+    _check_range(date_from, date_to)
     data = await service.kpi(session, date_from, date_to)
     return Response(
         content=service.kpi_workbook(data, KPI_LABELS),

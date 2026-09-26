@@ -28,6 +28,9 @@ BRIEF_TTL = 6 * 3600
 
 def _period(date_from: date | None, date_to: date | None) -> tuple[date, date]:
     date_to = date_to or clinic_time.today()
+    # a year outside 2000-2100 is a typo (and 9999-12-31 overflows the day arithmetic)
+    if not all(2000 <= d.year <= 2100 for d in (date_from or date_to, date_to)):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad_period")
     date_from = date_from or date_to - timedelta(days=6)
     if date_from > date_to or (date_to - date_from).days > 366:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad_period")
@@ -126,7 +129,7 @@ async def qa_calls(
     user_id: uuid.UUID | None = None,
     flagged: bool = False,
     order: Literal["recent", "worst", "best"] = "recent",
-    limit: int = Query(default=50, le=200),
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[dict[str, Any]]:
     return await qa.calls(
         session, *_period(date_from, date_to), user_id=user_id, flagged=flagged, order=order,

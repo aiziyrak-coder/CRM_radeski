@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import and_, distinct, func, select
+from sqlalchemy import and_, distinct, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clinic_time
@@ -15,11 +15,15 @@ from app.modules.scheduling.models import (
     Recommendation,
     RecommendationStatus,
 )
-from app.modules.tasks.models import REACHED, Outcome, TaskAttempt, TaskType
+from app.modules.tasks.models import REACHED, Outcome, Task, TaskAttempt, TaskType
 from app.modules.telephony.models import UNANSWERED_INBOUND, Call, CallDirection, CallStatus
-from app.modules.users.models import User
+from app.modules.users.models import Role, User
 
 S = AppointmentStatus
+# roles whose calls the reports break down per person (the daily report's operator filter)
+CALLING_ROLES = (Role.OPERATOR, Role.SUPERVISOR)
+# campaign-like calls whose patients count as "returned" once they visit (TZ 4.11)
+RETURN_TYPES = (TaskType.CAMPAIGN, TaskType.REACTIVATION)
 
 
 def _range(date_from: date, date_to: date) -> tuple[datetime, datetime]:
@@ -87,17 +91,22 @@ async def daily(
     )
     if user_id:
         attempts = attempts.where(TaskAttempt.user_id == user_id)
+    # every result incl. the ones a booking wrote (booking figures) ...
     sub = attempts.subquery()
+    # ... and only the operators' own calls (attempts, dial rate, outcomes)
+    calls = attempts.where(TaskAttempt.automatic.is_(False)).subquery()
 
     by_outcome = dict(
-        (await session.execute(select(sub.c.outcome, func.count()).group_by(sub.c.outcome))).all()
+        (
+            await session.execute(select(calls.c.outcome, func.count()).group_by(calls.c.outcome))
+        ).all()
     )
     reasons = dict(
         (
             await session.execute(
-                select(sub.c.reason, func.count())
-                .where(sub.c.reason.is_not(None))
-                .group_by(sub.c.reason)
+                select(calls.c.reason, func.count())
+                .where(calls.c.reason.is_not(None))
+                .group_by(calls.c.reason)
             )
         ).all()
     )
@@ -182,9 +191,14 @@ async def kpi(session: AsyncSession, date_from: date, date_to: date) -> dict[str
         or 0
     )
 
+    # operators' calls only: results written by a booking (automatic) are not dial attempts
     attempts = (
         select(TaskAttempt)
-        .where(TaskAttempt.created_at >= start, TaskAttempt.created_at < end)
+        .where(
+            TaskAttempt.created_at >= start,
+            TaskAttempt.created_at < end,
+            TaskAttempt.automatic.is_(False),
+        )
         .subquery()
     )
     total_attempts = await session.scalar(select(func.count()).select_from(attempts)) or 0
@@ -194,28 +208,49 @@ async def kpi(session: AsyncSession, date_from: date, date_to: date) -> dict[str
         )
         or 0
     )
-    confirm_calls = (
-        await session.scalar(
-            select(func.count(distinct(attempts.c.task_id))).where(
-                attempts.c.task_type == TaskType.CONFIRM_VISIT
-            )
-        )
-        or 0
+
+    # TZ 4.11 "Tasdiqlash %": confirmed / the day's appointments. Days up to today only (future
+    # visits aren't due for confirmation yet); a rescheduled visit lives on as its new booking.
+    _, end_of_today = clinic_time.day_bounds(clinic_time.today())
+    confirm_task = exists().where(
+        Task.appointment_id == Appointment.id,
+        Task.type == TaskType.CONFIRM_VISIT,
+        Task.outcome == Outcome.CONFIRMED,
     )
+    day_appts = (
+        select(
+            Appointment.id,
+            ((Appointment.status == S.CONFIRMED) | confirm_task).label("confirmed"),
+        )
+        .where(
+            Appointment.starts_at >= start,
+            Appointment.starts_at < min(end, end_of_today),
+            Appointment.status != S.RESCHEDULED,
+        )
+        .subquery()
+    )
+    appts_of_day = await session.scalar(select(func.count()).select_from(day_appts)) or 0
     confirmed = (
         await session.scalar(
-            select(func.count(distinct(attempts.c.task_id))).where(
-                attempts.c.task_type == TaskType.CONFIRM_VISIT,
-                attempts.c.outcome == Outcome.CONFIRMED,
-            )
+            select(func.count()).select_from(day_appts).where(day_appts.c.confirmed)
         )
         or 0
     )
+
+    # TZ 4.11 "Qaytarilgan bemorlar": patients a campaign / reactivation call brought back who
+    # actually came (a visit in the period, after the call task was created)
     returned = (
         await session.scalar(
-            select(func.count(distinct(attempts.c.patient_id))).where(
-                attempts.c.task_type.in_((TaskType.CAMPAIGN, TaskType.REACTIVATION)),
-                attempts.c.outcome == Outcome.BOOKED,
+            select(func.count(distinct(Appointment.patient_id))).where(
+                Appointment.starts_at >= start,
+                Appointment.starts_at < end,
+                Appointment.status.in_((S.ARRIVED, S.COMPLETED)),
+                exists().where(
+                    Task.patient_id == Appointment.patient_id,
+                    Task.type.in_(RETURN_TYPES),
+                    Task.outcome == Outcome.BOOKED,
+                    Task.created_at <= Appointment.starts_at,
+                ),
             )
         )
         or 0
@@ -301,7 +336,7 @@ async def kpi(session: AsyncSession, date_from: date, date_to: date) -> dict[str
         "sla_breached": breached,
         "attempts": total_attempts,
         "dial_rate": _pct(reached, total_attempts),
-        "confirmation_rate": _pct(confirmed, confirm_calls),
+        "confirmation_rate": _pct(confirmed, appts_of_day),
         "booking_to_visit": _pct(visited, past_total),
         "no_show_rate": _pct(no_show, past_total),
         "repeat_rate": _pct(recs_booked, recs_total),
@@ -365,3 +400,13 @@ def kpi_workbook(data: dict[str, Any], labels: dict[str, str]) -> bytes:
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+async def operators(session: AsyncSession) -> list[dict[str, Any]]:
+    """Active call-center staff, for the report's operator filter."""
+    rows = await session.execute(
+        select(User.id, User.full_name)
+        .where(User.is_active.is_(True), User.role.in_(CALLING_ROLES))
+        .order_by(User.full_name)
+    )
+    return [{"id": str(uid), "full_name": name} for uid, name in rows]

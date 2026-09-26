@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, SmallInteger, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, SmallInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, UUIDPk, str_enum
@@ -24,11 +24,13 @@ class TaskType(enum.StrEnum):
     CALLBACK = "callback"
 
 
-# default priority (lower = more urgent) and the script shown for each type (TZ 4.5, 4.6)
+# default priority (lower = more urgent) and the script shown for each type (TZ 4.5, 4.6).
+# TZ 4.5: today's confirmations and missed calls first, then new inquiries, no-shows and repeat
+# visits; campaigns and the cold base last
 TASK_DEFAULTS: dict[TaskType, tuple[int, str]] = {
+    TaskType.CONFIRM_VISIT: (4, "confirm"),
     TaskType.MISSED_CALL: (5, "incoming"),
     TaskType.NEW_LEAD: (8, "incoming"),
-    TaskType.CONFIRM_VISIT: (10, "confirm"),
     TaskType.NO_SHOW: (15, "no_show"),
     TaskType.CALLBACK: (18, "incoming"),
     TaskType.REPEAT_VISIT: (20, "repeat_visit"),
@@ -113,6 +115,8 @@ class Task(UUIDPk, Base):
     script_code: Mapped[str | None] = mapped_column(String(30))
     note: Mapped[str | None] = mapped_column(Text)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
+    # unanswered attempts in a row: drives the retry ladder (TZ 4.5), reset once we get through
+    no_answer_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     outcome: Mapped[Outcome | None] = mapped_column(str_enum(Outcome, 15))
     outcome_reason: Mapped[str | None] = mapped_column(String(50))
@@ -141,6 +145,8 @@ class TaskAttempt(UUIDPk, Base):
     outcome: Mapped[Outcome] = mapped_column(str_enum(Outcome, 15), index=True)
     reason: Mapped[str | None] = mapped_column(String(50))
     note: Mapped[str | None] = mapped_column(Text)
+    # written by the system (a booking closed the task), not an operator's call: reports skip it
+    automatic: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 

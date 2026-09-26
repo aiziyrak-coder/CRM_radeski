@@ -1,11 +1,16 @@
 """Scheduling: working hours, double-booking, devices, course intervals, statuses."""
 
+import uuid
 from datetime import datetime, time, timedelta
 
 from httpx import AsyncClient
+from sqlalchemy import select
 
 from app.core.db import SessionLocal
-from app.modules.catalog.models import Doctor
+from app.core.text import search_key
+from app.modules.audit.models import AuditLog
+from app.modules.catalog.models import Branch, Doctor
+from app.modules.patients.models import Patient, PatientKind, PatientPhone
 from app.modules.users.models import Role
 from tests.conftest import bearer, login, make_user
 from tests.factories import TZ, at, booking, next_monday
@@ -291,3 +296,169 @@ async def test_day_columns(client: AsyncClient, clinic: dict, op: dict) -> None:
         )
     ).json()
     assert tuesday == []
+
+
+async def test_reschedule_of_a_course_session_is_not_blocked_by_itself(
+    client: AsyncClient, clinic: dict, op: dict
+) -> None:
+    day = next_monday()
+    appt = (
+        await client.post(
+            "/api/appointments",
+            json=booking(clinic, at(day, 10), doctor="d2", service="laser"),
+            headers=op,
+        )
+    ).json()
+    params = {
+        "service_ids": clinic["laser"],
+        "branch_id": clinic["branch"],
+        "patient_id": clinic["patient"],
+        "date_from": day.isoformat(),
+        "days": 60,
+    }
+
+    async def first_day(**extra: str) -> object:
+        slots = (
+            await client.get("/api/appointments/slots", params={**params, **extra}, headers=op)
+        ).json()
+        return datetime.fromisoformat(slots[0]["starts_at"]).astimezone(TZ).date()
+
+    assert await first_day() >= day + timedelta(days=30)  # a second session must wait
+    # moving the same session: it doesn't block itself
+    assert await first_day(exclude_appointment_id=appt["id"]) == day
+
+    # a booked session also blocks the days just before it
+    week_before = (day - timedelta(days=7)).isoformat()
+    assert await first_day(date_from=week_before) >= day + timedelta(days=30)
+
+    # a cancelled session doesn't count
+    await client.post(
+        f"/api/appointments/{appt['id']}/status",
+        json={"status": "cancelled", "reason": "x"},
+        headers=op,
+    )
+    assert await first_day() == day
+
+
+async def test_booking_checks_branch_and_doctor_services(
+    client: AsyncClient, clinic: dict, op: dict
+) -> None:
+    day = next_monday()
+    wrong_doctor = await client.post(
+        "/api/appointments", json=booking(clinic, at(day, 9), doctor="tri"), headers=op
+    )
+    assert wrong_doctor.status_code == 409
+    assert wrong_doctor.json()["detail"] == "doctor_not_eligible"
+    no_branch = await client.post(
+        "/api/appointments",
+        json={**booking(clinic, at(day, 9)), "branch_id": str(uuid.uuid4())},
+        headers=op,
+    )
+    assert no_branch.status_code == 404 and no_branch.json()["detail"] == "branch_not_found"
+
+    async with SessionLocal() as s:
+        other_branch = Branch(name_uz="Ikkinchi filial", name_ru="Второй филиал")
+        s.add(other_branch)
+        await s.commit()
+    await make_user("reg1", Role.REGISTRAR)
+    reg = bearer(await login(client, "reg1"))
+    elsewhere = await client.post(
+        "/api/appointments",
+        json={
+            **booking(clinic, at(day, 9)),
+            "branch_id": str(other_branch.id),
+            "allow_outside_hours": True,
+        },
+        headers=reg,
+    )
+    assert elsewhere.status_code == 409
+    assert elsewhere.json()["detail"] == "doctor_not_at_branch"
+
+    appt = (
+        await client.post("/api/appointments", json=booking(clinic, at(day, 9)), headers=op)
+    ).json()
+    moved = await client.post(
+        f"/api/appointments/{appt['id']}/reschedule",
+        json={"starts_at": at(day, 10), "doctor_id": clinic["tri"]},
+        headers=op,
+    )
+    assert moved.status_code == 409 and moved.json()["detail"] == "doctor_not_eligible"
+
+
+async def test_recommendation_must_match_the_appointment(
+    client: AsyncClient, clinic: dict, op: dict
+) -> None:
+    doctor_user = await make_user("doc1", Role.DOCTOR)
+    async with SessionLocal() as s:
+        (await s.get(Doctor, uuid.UUID(clinic["d1"]))).user_id = doctor_user.id
+        other = Patient(
+            full_name="Boshqa Bemor",
+            search_key=search_key("Boshqa Bemor"),
+            kind=PatientKind.LEGACY,
+            tags=[],
+            phones=[PatientPhone(number="+998900000002", is_primary=True)],
+        )
+        s.add(other)
+        await s.commit()
+    doc = bearer(await login(client, "doc1"))
+    await make_user("reg1", Role.REGISTRAR)
+    reg = bearer(await login(client, "reg1"))
+    day = next_monday()
+    mine = (
+        await client.post("/api/appointments", json=booking(clinic, at(day, 9)), headers=op)
+    ).json()
+    theirs = (
+        await client.post(
+            "/api/appointments", json=booking(clinic, at(day, 9), doctor="d2"), headers=op
+        )
+    ).json()
+    due = (day + timedelta(days=14)).isoformat()
+
+    async def rec(headers: dict, **kw: str) -> tuple[int, dict]:
+        body = {"patient_id": clinic["patient"], "due_date": due, **kw}
+        resp = await client.post("/api/recommendations", json=body, headers=headers)
+        return resp.status_code, resp.json()
+
+    code, body = await rec(reg, appointment_id=str(uuid.uuid4()))
+    assert (code, body["detail"]) == (404, "appointment_not_found")
+    code, body = await rec(reg, patient_id=str(other.id), appointment_id=mine["id"])
+    assert (code, body["detail"]) == (409, "appointment_patient_mismatch")
+    # doctors: only for their own appointment / patient
+    assert (await rec(doc, appointment_id=theirs["id"]))[0] == 403
+    assert (await rec(doc, patient_id=str(other.id)))[0] == 403
+    assert (await rec(doc))[0] == 201
+    code, body = await rec(reg, appointment_id=theirs["id"])
+    assert code == 201 and body["doctor_id"] == clinic["d2"]
+
+    async with SessionLocal() as s:
+        (await s.get(Patient, other.id)).merged_into_id = uuid.UUID(clinic["patient"])
+        await s.commit()
+    code, body = await rec(reg, patient_id=str(other.id))
+    assert (code, body["detail"]) == (409, "patient_merged")
+
+
+async def test_absences_are_audited(client: AsyncClient, clinic: dict) -> None:
+    await make_user("sup1", Role.SUPERVISOR)
+    sup = bearer(await login(client, "sup1"))
+    body = {"date_from": next_monday().isoformat(), "date_to": next_monday().isoformat()}
+
+    missing = await client.post(
+        f"/api/schedule/doctors/{uuid.uuid4()}/absences", json=body, headers=sup
+    )
+    assert missing.status_code == 404
+    added = await client.post(
+        f"/api/schedule/doctors/{clinic['d1']}/absences", json=body, headers=sup
+    )
+    assert added.status_code == 201
+    schedule = (await client.get(f"/api/schedule/doctors/{clinic['d1']}", headers=sup)).json()
+    assert [a["id"] for a in schedule["absences"]] == [added.json()["id"]]
+
+    url = f"/api/schedule/absences/{added.json()['id']}"
+    assert (await client.delete(url, headers=sup)).status_code == 204
+    assert (await client.delete(url, headers=sup)).status_code == 404
+
+    async with SessionLocal() as s:
+        actions = list(
+            await s.scalars(select(AuditLog.action).where(AuditLog.entity_id == clinic["d1"]))
+        )
+    assert sorted(actions) == ["schedule.absence_add", "schedule.absence_delete"]

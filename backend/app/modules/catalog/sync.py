@@ -2,6 +2,9 @@
 
 Site-owned fields (names, prices, activity) are overwritten; CRM-only fields are never touched.
 Entries that disappear from the site are deactivated, not deleted (appointments reference them).
+A doctor the sync deactivated comes back when they reappear on the site; a doctor an admin
+deactivated stays off. A suspicious snapshot (an empty list, or one that shrank by more than
+catalog_sync_max_shrink) aborts the whole sync instead of deactivating half the clinic.
 """
 
 import re
@@ -9,7 +12,7 @@ from collections import Counter
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -54,6 +57,28 @@ def _is_foreign_branch(item: dict[str, Any]) -> bool:
     return "Belgiya" in text or (item.get("phone") or "").startswith("+32")
 
 
+class SyncAbortedError(Exception):
+    """The site returned a list that looks broken; nothing was changed."""
+
+    def __init__(self, entity: str, fetched: int, active: int) -> None:
+        super().__init__(f"{entity}: site returned {fetched}, {active} active in the CRM")
+        self.entity, self.fetched, self.active = entity, fetched, active
+
+
+async def _check_not_shrunk(session: AsyncSession, model: Any, entity: str, ids: set[str]) -> None:
+    active = (
+        await session.scalar(
+            select(func.count())
+            .select_from(model)
+            .where(model.site_id.is_not(None), model.is_active.is_(True))
+        )
+        or 0
+    )
+    max_shrink = get_settings().catalog_sync_max_shrink
+    if not ids or (active and len(ids) < active * (1 - max_shrink)):
+        raise SyncAbortedError(entity, len(ids), active)
+
+
 async def apply_site_data(
     session: AsyncSession,
     branches: list[dict[str, Any]],
@@ -62,6 +87,16 @@ async def apply_site_data(
     prices: list[dict[str, Any]],
 ) -> Counter[str]:
     counts: Counter[str] = Counter()
+
+    # validate every list before touching anything
+    await _check_not_shrunk(
+        session,
+        Branch,
+        "branches",
+        {str(b["id"]) for b in branches if not _is_foreign_branch(b)},
+    )
+    await _check_not_shrunk(session, Doctor, "doctors", {str(d["id"]) for d in doctors})
+    await _check_not_shrunk(session, Service, "prices", {str(p["id"]) for p in prices})
 
     # --- branches ---
     existing_b = {b.site_id: b for b in await session.scalars(select(Branch))}
@@ -98,6 +133,7 @@ async def apply_site_data(
                 site_id=sid,
                 specialties=specialties_from_title(item.get("role_uz", "")),
                 is_active=True,
+                deactivated_by_sync=False,
             )
             session.add(d)
             counts["doctors_created"] += 1
@@ -106,9 +142,12 @@ async def apply_site_data(
         d.sort_order = int(item.get("sort_order") or 0)
         if not d.specialties:  # keep specialties edited in the CRM
             d.specialties = specialties_from_title(item.get("role_uz", ""))
+        if not d.is_active and d.deactivated_by_sync:
+            d.is_active, d.deactivated_by_sync = True, False
+            counts["doctors_reactivated"] += 1
     for sid, d in existing_d.items():
         if sid and sid not in seen and d.is_active:
-            d.is_active = False
+            d.is_active, d.deactivated_by_sync = False, True
             counts["doctors_deactivated"] += 1
 
     # --- service categories ---

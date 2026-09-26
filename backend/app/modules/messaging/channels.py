@@ -5,8 +5,9 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clinic_time
+from app.core.config import get_settings
 from app.modules.messaging import service
-from app.modules.messaging.models import Channel, Direction, Message, MessageStatus
+from app.modules.messaging.models import Channel, Direction, MessageStatus
 
 # text shown for non-text messages (media isn't downloaded in v1)
 PLACEHOLDERS = {
@@ -41,17 +42,26 @@ def _reply(chat_id: int, text: str, markup: dict[str, Any] | None = None) -> dic
     return body
 
 
-async def _log_outbound(session: AsyncSession, chat_id: str, text: str, title: str | None) -> None:
-    conv = await service.get_conversation(session, Channel.TELEGRAM, chat_id, title=title)
-    now = clinic_time.now()
-    session.add(
-        Message(
-            conversation_id=conv.id, direction=Direction.OUT, text=text,
-            status=MessageStatus.SENT, created_at=now, sent_at=now, attempts=0,
-        )
-    )  # fmt: skip
-    conv.last_message_at = now
+async def _log_outbound(
+    session: AsyncSession,
+    channel: Channel,
+    chat_id: str,
+    text: str,
+    title: str | None = None,
+    external_id: str | None = None,
+) -> None:
+    """A message that reached the person without our queue (bot reply, the clinic's own app)."""
+    conv = await service.get_conversation(session, channel, chat_id, title=title)
+    await service.store_message(
+        session, conv, Direction.OUT, text, MessageStatus.SENT, external_id, clinic_time.now()
+    )
     await session.flush()
+
+
+def _bot_id() -> int | None:
+    """The bot's own user id is the first part of its token ("123456:ABC...")."""
+    head = get_settings().telegram_bot_token.split(":", 1)[0]
+    return int(head) if head.isdigit() else None
 
 
 async def telegram_update(session: AsyncSession, update: dict[str, Any]) -> dict[str, Any] | None:
@@ -67,14 +77,22 @@ async def telegram_update(session: AsyncSession, update: dict[str, Any]) -> dict
     text = _text(msg)
 
     if business and sender.get("id") != chat["id"]:
-        # the clinic answered from its own Telegram app (Business account): keep the history whole
-        await _log_outbound(session, chat_id, text, title)
+        # an outgoing message of the Business account. Sent by this bot = an operator's reply
+        # from the CRM, already in the history; otherwise the clinic answered from its own
+        # Telegram app: keep the history whole
+        bot_id = _bot_id()
+        if bot_id is not None and (msg.get("sender_business_bot") or {}).get("id") == bot_id:
+            return None
+        await _log_outbound(
+            session, Channel.TELEGRAM, chat_id, text, title,
+            external_id=service.telegram_msg_id(msg.get("message_id"), business),
+        )  # fmt: skip
         return None
     if text.strip() == "/start" and not business:
         welcome = await service.render(session, "telegram_welcome", lang, {})
         if not welcome:
             return None
-        await _log_outbound(session, chat_id, welcome, title)
+        await _log_outbound(session, Channel.TELEGRAM, chat_id, welcome, title)
         label = "📞 Telefon raqamni yuborish" if lang == "uz" else "📞 Отправить номер"
         keyboard = {
             "keyboard": [[{"text": label, "request_contact": True}]],
@@ -84,15 +102,20 @@ async def telegram_update(session: AsyncSession, update: dict[str, Any]) -> dict
         return _reply(chat["id"], welcome, keyboard)
 
     contact = msg.get("contact") or {}
-    own_contact = contact and contact.get("user_id") in (None, chat["id"])
-    await service.receive(
+    # only the "send my number" button proves the number is the sender's own: it sets user_id.
+    # A forwarded card or a typed contact of someone else must not link the chat to a patient
+    sender_id = sender.get("id")
+    own_contact = bool(contact) and sender_id is not None and contact.get("user_id") == sender_id
+    received = await service.receive(
         session, Channel.TELEGRAM, chat_id, text, title=title,
-        external_msg_id=str(msg.get("message_id")),
+        external_msg_id=service.telegram_msg_id(msg.get("message_id"), business),
         phone=contact.get("phone_number") if own_contact else None,
         business_connection_id=business,
     )  # fmt: skip
+    if received is None:  # Telegram re-delivered an update we already handled
+        return None
     if own_contact and not business:
-        await _log_outbound(session, chat_id, CONTACT_THANKS[lang], title)
+        await _log_outbound(session, Channel.TELEGRAM, chat_id, CONTACT_THANKS[lang], title)
         return _reply(chat["id"], CONTACT_THANKS[lang], {"remove_keyboard": True})
     return None
 
@@ -108,16 +131,13 @@ async def instagram_event(session: AsyncSession, payload: dict[str, Any], own_id
                 continue
             text = message.get("text") or ("[rasm]" if message.get("attachments") else "[xabar]")
             if message.get("is_echo") or sender == own_id:
-                conv = await service.get_conversation(session, Channel.INSTAGRAM, recipient)
-                now = clinic_time.now()
-                session.add(
-                    Message(
-                        conversation_id=conv.id, direction=Direction.OUT, text=text,
-                        status=MessageStatus.SENT, external_id=message.get("mid"),
-                        created_at=now, sent_at=now, attempts=0,
-                    )
-                )  # fmt: skip
-                conv.last_message_at = now
+                if not recipient:
+                    continue
+                # our own message: sent from the CRM (its mid is stored already -> skipped) or
+                # from the Instagram app by the clinic (kept, so the history is whole)
+                await _log_outbound(
+                    session, Channel.INSTAGRAM, recipient, text, external_id=message.get("mid")
+                )
             else:
                 await service.receive(
                     session, Channel.INSTAGRAM, sender, text, title="Instagram",

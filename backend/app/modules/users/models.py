@@ -29,8 +29,9 @@ class User(UUIDPk, Timestamps, Base):
     full_name: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(str_enum(Role, 20))
     language: Mapped[Language] = mapped_column(str_enum(Language, 5), default=Language.UZ)
-    # FK to branches is added when the catalog module lands (phase 0.6)
-    branch_id: Mapped[uuid.UUID | None] = mapped_column(default=None)
+    branch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("branches.id", ondelete="SET NULL"), default=None
+    )
     password_hash: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # second factor (admins, owner): base32 secret; enabled once the app was confirmed

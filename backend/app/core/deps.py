@@ -37,8 +37,9 @@ async def get_current_user(
         raise _unauthorized() from None
 
     user = await session.get(User, user_id)
-    # checked on every request so deactivation takes effect immediately
-    if user is None or not user.is_active:
+    # checked on every request so deactivation and role changes take effect immediately
+    # (a token issued for the old role, e.g. before 2FA became required, stops working)
+    if user is None or not user.is_active or payload.get("role") != user.role:
         raise _unauthorized()
     return user
 

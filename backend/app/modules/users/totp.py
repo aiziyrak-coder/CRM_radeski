@@ -44,13 +44,15 @@ def challenge_for(user: User) -> str:
     payload = {
         "sub": str(user.id),
         "purpose": "totp",
+        "jti": uuid.uuid4().hex,  # attempts per challenge are counted in Redis (ratelimit)
         "iat": now,
         "exp": now + timedelta(minutes=CHALLENGE_MINUTES),
     }
     return jwt.encode(payload, get_settings().jwt_secret, algorithm=_ALGORITHM)
 
 
-def user_id_from(challenge: str) -> uuid.UUID | None:
+def decode_challenge(challenge: str) -> tuple[uuid.UUID, str] | None:
+    """(user id, challenge id) of a valid, unexpired challenge; None otherwise."""
     try:
         payload = jwt.decode(challenge, get_settings().jwt_secret, algorithms=[_ALGORITHM])
     except jwt.PyJWTError:
@@ -58,9 +60,14 @@ def user_id_from(challenge: str) -> uuid.UUID | None:
     if payload.get("purpose") != "totp":  # an access token is not a challenge
         return None
     try:
-        return uuid.UUID(payload["sub"])
+        return uuid.UUID(payload["sub"]), str(payload["jti"])
     except (KeyError, ValueError):
         return None
+
+
+def user_id_from(challenge: str) -> uuid.UUID | None:
+    decoded = decode_challenge(challenge)
+    return decoded[0] if decoded else None
 
 
 def verify(user: User, code: str) -> bool:

@@ -80,9 +80,13 @@ async def list_campaigns(session: SessionDep, _: Manager) -> list[CampaignOut]:
 async def create_campaign(
     body: CampaignIn, request: Request, session: SessionDep, user: Manager
 ) -> CampaignOut:
+    # stored explicitly, so the A/B stats name the script actually used for variant A
+    script_a = body.script_code or service.DEFAULT_SCRIPT
+    if body.script_code_b and body.script_code_b == script_a:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="same_script")
     campaign = Campaign(
-        name=body.name, segment=body.segment.as_filter(), script_code=body.script_code,
-        script_code_b=body.script_code_b if body.script_code_b != body.script_code else None,
+        name=body.name, segment=body.segment.as_filter(), script_code=script_a,
+        script_code_b=body.script_code_b or None,
         daily_limit=body.daily_limit, ends_on=body.ends_on, status=CampaignStatus.DRAFT,
         created_by=user.id,
     )  # fmt: skip
@@ -107,10 +111,10 @@ async def set_status(
     campaign = await session.get(Campaign, campaign_id)
     if campaign is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="campaign_not_found")
-    campaign.status = body.status
-    if body.status is CampaignStatus.ACTIVE:
-        # start today rather than waiting for tomorrow's morning run
-        await service.generate_for_campaign(session, campaign)
+    try:
+        await service.set_status(session, campaign, body.status)
+    except service.CampaignError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=exc.code) from None
     audit.record(
         session, "campaign.status", user_id=user.id, entity="campaign", entity_id=campaign.id,
         after={"status": body.status.value}, ip=client_ip(request),

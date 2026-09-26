@@ -8,11 +8,13 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clinic_time
+from app.core.config import get_settings
 from app.core.events import emit
 from app.modules.patients import service as patients_service
 from app.modules.patients.models import Patient
 from app.modules.tasks.models import (
     OUTBOUND_TYPES,
+    REACHED,
     TASK_DEFAULTS,
     Outcome,
     Task,
@@ -21,10 +23,7 @@ from app.modules.tasks.models import (
     TaskType,
 )
 
-MAX_ATTEMPTS = 3  # TZ 4.5: then the task is closed as "no answer"
-RETRY_AFTER_FIRST = timedelta(hours=2)
-RETRY_NEXT_DAY_AT = time(10, 0)
-THINKING_WORKDAYS = 2  # "o'ylab ko'raman" -> call back in two working days unless agreed otherwise
+# retry ladder, lead SLA etc. are settings (config.py "Task queue rules"), not constants
 
 
 class TaskError(Exception):
@@ -87,7 +86,7 @@ async def close_open(
     patient_id: uuid.UUID | None = None,
     appointment_id: uuid.UUID | None = None,
     lead_id: uuid.UUID | None = None,
-    outcome: Outcome,
+    outcome: Outcome | None,
     status: TaskStatus = TaskStatus.DONE,
 ) -> int:
     filters = [Task.status == TaskStatus.OPEN, Task.type.in_(types)]
@@ -118,6 +117,9 @@ async def record_result(
     analysis_id: uuid.UUID | None = None,
 ) -> Task:
     """Stores an attempt and moves the task on: retry, reschedule a callback, or close it."""
+    # two submits of the same task (double click, two operators) must not both apply:
+    # lock the row and re-read it, the second one then sees the task closed
+    await session.refresh(task, with_for_update=True)
     if task.status is not TaskStatus.OPEN:
         raise TaskError("task_closed")
     if outcome is Outcome.CALLBACK and callback_at is None:
@@ -125,9 +127,15 @@ async def record_result(
     if outcome in (Outcome.REFUSED, Outcome.CANCELLED) and not reason:
         raise TaskError("reason_required")
 
+    settings = get_settings()
+    retry_next_day_at = time(settings.task_retry_next_day_hour)
     now = clinic_time.now()
     task.attempts += 1
     task.last_attempt_at = now
+    if outcome is Outcome.NO_ANSWER:
+        task.no_answer_count += 1
+    elif outcome in REACHED:
+        task.no_answer_count = 0  # we got through: the ladder starts over next time
     session.add(
         TaskAttempt(
             task_id=task.id,
@@ -143,11 +151,15 @@ async def record_result(
     if note:
         task.note = f"{task.note}\n{note}" if task.note else note
 
-    if outcome is Outcome.NO_ANSWER and task.attempts < MAX_ATTEMPTS:
-        # TZ 4.5: retry in 2 hours, then the next working day
-        retry = now + RETRY_AFTER_FIRST if task.attempts == 1 else None
+    if outcome is Outcome.NO_ANSWER and task.no_answer_count < settings.task_max_no_answer:
+        # TZ 4.5: retry in 2 hours, then the next working day (3 unanswered attempts in total)
+        retry = (
+            now + timedelta(minutes=settings.task_retry_after_minutes)
+            if task.no_answer_count == 1
+            else None
+        )
         if retry is None or not clinic_time.is_open(retry):
-            retry = clinic_time.next_workday_at(clinic_time.local(now).date(), RETRY_NEXT_DAY_AT)
+            retry = clinic_time.next_workday_at(clinic_time.local(now).date(), retry_next_day_at)
         task.due_at = retry
     elif outcome is Outcome.CALLBACK:
         task.due_at = callback_at  # stays open, reappears at the promised time
@@ -156,9 +168,9 @@ async def record_result(
         # a warm contact must not be dropped: one follow-up call, then the result is final
         if callback_at is None:
             callback_at = clinic_time.now()
-            for _ in range(THINKING_WORKDAYS):
+            for _ in range(settings.task_thinking_workdays):
                 callback_at = clinic_time.next_workday_at(
-                    clinic_time.local(callback_at).date(), RETRY_NEXT_DAY_AT
+                    clinic_time.local(callback_at).date(), retry_next_day_at
                 )
         task.due_at = callback_at
         task.outcome = outcome
@@ -184,9 +196,11 @@ async def record_result(
             )
 
     await session.flush()
+    # subscribers: `task.no_answer_count` is the number of unanswered attempts in a row
+    # (TZ 4.5 message after the 2nd one); `task.attempts` also counts answered calls
     await emit(
         session, "task.result", task=task, outcome=outcome, reason=reason, user_id=user_id,
-        analysis_id=analysis_id,
+        analysis_id=analysis_id, no_answer_count=task.no_answer_count,
     )  # fmt: skip
     return task
 

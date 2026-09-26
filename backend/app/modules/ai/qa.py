@@ -52,33 +52,49 @@ async def overview(
     session: AsyncSession, date_from: date, date_to: date, user_id: uuid.UUID | None = None
 ) -> dict[str, Any]:
     start, end = _range(date_from, date_to)
-    stmt = _ready(start, end)
+    # only the columns the panel needs: a year of full rows would drag every transcript along
+    stmt = (
+        select(
+            Call.user_id,
+            CallAnalysis.score,
+            CallAnalysis.criteria,
+            CallAnalysis.has_red_flags,
+            CallAnalysis.flags_reviewed_at,
+            CallAnalysis.review,
+        )
+        .join(Call, Call.id == CallAnalysis.call_id)
+        .where(
+            CallAnalysis.status == AnalysisStatus.READY,
+            Call.started_at >= start,
+            Call.started_at < end,
+        )
+    )
     if user_id:
         stmt = stmt.where(Call.user_id == user_id)
     rows = (await session.execute(stmt)).all()
     names = dict((await session.execute(select(User.id, User.full_name))).all())
-    per_user: dict[Any, list[CallAnalysis]] = {}
-    for a, call in rows:
-        per_user.setdefault(call.user_id, []).append(a)
+    per_user: dict[Any, list[Any]] = {}
+    for row in rows:
+        per_user.setdefault(row.user_id, []).append(row)
     criteria = list(await session.scalars(select(QaCriterion).order_by(QaCriterion.sort_order)))
     passed, applicable = Counter(), Counter()
-    for a, _ in rows:
-        for r in a.criteria or []:
+    for row in rows:
+        for r in row.criteria or []:
             if r.get("passed") is not None:
                 applicable[r["code"]] += 1
                 passed[r["code"]] += bool(r["passed"])
     return {
         "analysed": len(rows),
-        "avg_score": _avg([a.score for a, _ in rows]),
-        "red_flags_open": sum(1 for a, _ in rows if a.has_red_flags and not a.flags_reviewed_at),
+        "avg_score": _avg([r.score for r in rows]),
+        "red_flags_open": sum(1 for r in rows if r.has_red_flags and not r.flags_reviewed_at),
         "operators": sorted(
             (
                 {
                     "user_id": uid,
                     "name": names.get(uid, "—") if uid else "—",
                     "calls": len(items),
-                    "avg_score": _avg([a.score for a in items]),
-                    "red_flags": sum(a.has_red_flags for a in items),
+                    "avg_score": _avg([r.score for r in items]),
+                    "red_flags": sum(r.has_red_flags for r in items),
                 }
                 for uid, items in per_user.items()
             ),
@@ -95,7 +111,7 @@ async def overview(
             for c in criteria
         ],
         "reviews": dict(
-            Counter(a.review.value for a, _ in rows if a.review is not None)
+            Counter(r.review.value for r in rows if r.review is not None)
         ),
     }  # fmt: skip
 

@@ -318,6 +318,32 @@ async def test_operator_confirms_or_corrects_the_suggestion(
     }
 
 
+async def test_result_ignores_an_analysis_of_another_call(
+    client: AsyncClient, clinic: dict, fakes: FakeLlm
+) -> None:
+    await operator_with_extension()
+    op = bearer(await login(client, "op1"))
+    await client.post(
+        "/api/tasks",
+        json={"patient_id": clinic["patient"], "due_at": datetime.now(UTC).isoformat()},
+        headers=op,
+    )
+    async with SessionLocal() as s:
+        task = (await s.scalars(select(Task).where(Task.type == TaskType.CALLBACK))).one()
+    other = await answered_call(client, "904.1")  # an inbound call, not made from this task
+    analysis = await run_analysis(other.id)
+
+    resp = await client.post(
+        f"/api/tasks/{task.id}/result",
+        json={"outcome": "refused", "reason": "price", "analysis_id": str(analysis.id)},
+        headers=op,
+    )
+    assert resp.status_code == 200, resp.text
+    async with SessionLocal() as s:
+        a = await s.get(CallAnalysis, analysis.id)
+    assert a.review is None and a.corrections is None
+
+
 async def test_qa_panel_and_access(client: AsyncClient, clinic: dict, fakes: FakeLlm) -> None:
     await operator_with_extension()
     await make_user("op2", Role.OPERATOR)

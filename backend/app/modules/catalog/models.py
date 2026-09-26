@@ -7,7 +7,7 @@ truth); CRM-only fields (duration, device, intervals, schedules) are edited here
 import enum
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint, false
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -58,6 +58,11 @@ class Doctor(UUIDPk, Timestamps, Base):
     specialties: Mapped[list[Specialty]] = mapped_column(ARRAY(String(30)), default=list)
     color: Mapped[str | None] = mapped_column(String(9))  # schedule column colour
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # set when the site sync (not an admin) deactivated the doctor: only then does the doctor
+    # come back automatically when they reappear on the site
+    deactivated_by_sync: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
 

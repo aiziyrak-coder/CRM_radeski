@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.deps import SessionDep, client_ip, require_roles
 from app.modules.audit import service as audit
@@ -18,6 +19,10 @@ from app.modules.catalog.models import (
 )
 from app.modules.diagnoses.categories import Specialty
 from app.modules.users.models import Role, User
+
+# NOT NULL columns: an explicit null in a PATCH means "leave as is"
+DOCTOR_REQUIRED = ("specialties", "is_active")
+SERVICE_REQUIRED = ("duration_min", "requires_consultation", "is_consultation")
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
@@ -135,9 +140,29 @@ async def update_doctor(
     doctor = await session.get(Doctor, doctor_id)
     if doctor is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="doctor_not_found")
-    changes = body.model_dump(exclude_unset=True)
+    changes = {
+        k: v
+        for k, v in body.model_dump(exclude_unset=True).items()
+        if not (k in DOCTOR_REQUIRED and v is None)
+    }
+    if changes.get("user_id"):
+        linked = await session.get(User, changes["user_id"])
+        if linked is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="user_not_found")
+        taken = await session.scalar(
+            select(Doctor.id).where(Doctor.user_id == linked.id, Doctor.id != doctor.id)
+        )
+        if taken:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="user_already_linked")
     for field, value in changes.items():
         setattr(doctor, field, value)
+    if "is_active" in changes:
+        doctor.deactivated_by_sync = False  # an admin's decision; the site sync keeps it
+    try:
+        async with session.begin_nested():
+            await session.flush()
+    except IntegrityError:  # the same user linked to another doctor concurrently
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="user_already_linked") from None
     audit.record(
         session, "catalog.doctor", user_id=user.id, entity="doctor", entity_id=doctor.id,
         after={k: str(v) if isinstance(v, uuid.UUID) else v for k, v in changes.items()},
@@ -233,7 +258,11 @@ async def update_service(
     service = await session.get(Service, service_id)
     if service is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="service_not_found")
-    changes = body.model_dump(exclude_unset=True)
+    changes = {
+        k: v
+        for k, v in body.model_dump(exclude_unset=True).items()
+        if not (k in SERVICE_REQUIRED and v is None)
+    }
     for field, value in changes.items():
         setattr(service, field, value)
     audit.record(
@@ -246,8 +275,18 @@ async def update_service(
 
 @router.post("/sync")
 async def sync_catalog(request: Request, session: SessionDep, user: Admin) -> dict[str, int]:
+    user_id = user.id  # read before a rollback expires the instance
     try:
         counts = await site_sync.sync_from_site(session)
+    except site_sync.SyncAbortedError as exc:
+        await session.rollback()
+        audit.record(
+            session, "catalog.sync_aborted", user_id=user_id,
+            after={"entity": exc.entity, "fetched": exc.fetched, "active": exc.active},
+            ip=client_ip(request),
+        )  # fmt: skip
+        await session.commit()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="sync_aborted") from None
     except Exception as exc:  # noqa: BLE001 - site unreachable / bad response
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail="site_unavailable") from exc
     audit.record(

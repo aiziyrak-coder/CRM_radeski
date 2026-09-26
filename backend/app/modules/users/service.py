@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -13,6 +14,7 @@ from app.core.security import (
     password_needs_rehash,
     verify_password,
 )
+from app.modules.catalog.models import Branch
 from app.modules.users.models import User, UserSession
 from app.modules.users.schemas import UserCreate, UserUpdate
 
@@ -26,7 +28,19 @@ AUDITED_FIELDS = (
 )  # fmt: skip
 
 
+# columns that can't be cleared with an explicit null in a PATCH
+_REQUIRED_FIELDS = ("full_name", "role", "language", "is_active")
+
+
 class UsernameTakenError(Exception):
+    pass
+
+
+class BranchNotFoundError(Exception):
+    pass
+
+
+class ExtensionTakenError(Exception):
     pass
 
 
@@ -57,9 +71,15 @@ async def authenticate(session: AsyncSession, username: str, password: str) -> U
     return user
 
 
+async def _check_branch(session: AsyncSession, branch_id: uuid.UUID | None) -> None:
+    if branch_id is not None and await session.get(Branch, branch_id) is None:
+        raise BranchNotFoundError(str(branch_id))
+
+
 async def create_user(session: AsyncSession, data: UserCreate) -> User:
     if await get_by_username(session, data.username):
         raise UsernameTakenError(data.username)
+    await _check_branch(session, data.branch_id)
     user = User(
         username=data.username.lower(),
         full_name=data.full_name,
@@ -76,7 +96,23 @@ async def create_user(session: AsyncSession, data: UserCreate) -> User:
 
 def apply_update(user: User, data: UserUpdate) -> None:
     for field, value in data.model_dump(exclude_unset=True).items():
+        if field in _REQUIRED_FIELDS and value is None:
+            continue
         setattr(user, field, value)
+
+
+async def update_user(session: AsyncSession, user: User, data: UserUpdate) -> None:
+    if "branch_id" in data.model_fields_set:
+        await _check_branch(session, data.branch_id)
+    apply_update(user, data)
+    try:
+        async with session.begin_nested():
+            await session.flush()
+    except IntegrityError as exc:
+        # two admins giving out the same softphone extension at once
+        if "sip_extension" in str(exc.orig):
+            raise ExtensionTakenError from None
+        raise
 
 
 async def set_password(session: AsyncSession, user: User, password: str) -> None:

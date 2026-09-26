@@ -1,11 +1,15 @@
+import uuid
 from typing import Any
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import func, select
 
+from app.core import events
 from app.core.db import SessionLocal
 from app.modules.audit.models import AuditLog
+from app.modules.patients import service as patients_service
+from app.modules.patients.models import Patient
 from app.modules.users.models import Role
 from tests.conftest import bearer, login, make_user
 
@@ -277,3 +281,84 @@ async def test_default_list_hides_cold_base_but_search_finds_it(
     assert cold.json()["total"] == 1
     by_phone = await client.get("/api/patients", params={"q": "5550000"}, headers=op)
     assert by_phone.json()["total"] == 1
+
+
+@pytest.fixture
+def dnc_events(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Records patient.do_not_call_set (tasks/rules.py cancels the patient's outbound calls)."""
+    seen: list[str] = []
+
+    async def handler(_session: Any, payload: dict) -> None:
+        seen.append(payload["patient"].full_name)
+
+    monkeypatch.setitem(events._handlers, "patient.do_not_call_set", [handler])
+    return seen
+
+
+async def test_do_not_call_emits_event(client: AsyncClient, op: dict, dnc_events: list) -> None:
+    p = await create(client, op)
+    url = f"/api/patients/{p['id']}/do-not-call"
+
+    await client.put(url, json={"do_not_call": True, "reason": "so'radi"}, headers=op)
+    assert dnc_events == [p["full_name"]]
+
+    off = await client.put(url, json={"do_not_call": False}, headers=op)
+    assert off.json()["do_not_call"] is False and off.json()["do_not_call_reason"] is None
+    assert len(dnc_events) == 1  # clearing the flag is not a do-not-call event
+
+
+async def test_merge_into_do_not_call_survivor_emits_event(
+    client: AsyncClient, dnc_events: list
+) -> None:
+    await make_user("sup", Role.SUPERVISOR)
+    sup = bearer(await login(client, "sup"))
+    target = await create(client, sup)
+    source = await create(
+        client, sup, full_name="Boshqa Odam", birth_date=None, phones=[{"number": "901112233"}]
+    )
+    await client.put(
+        f"/api/patients/{source['id']}/do-not-call",
+        json={"do_not_call": True, "reason": "so'radi"},
+        headers=sup,
+    )
+    dnc_events.clear()
+
+    resp = await client.post(
+        f"/api/patients/{target['id']}/merge", json={"source_id": source["id"]}, headers=sup
+    )
+    assert resp.status_code == 200 and resp.json()["do_not_call"] is True
+    assert dnc_events == [target["full_name"]]
+
+
+async def test_merge_rejects_tombstones_and_rechecks_under_lock(client: AsyncClient) -> None:
+    await make_user("sup", Role.SUPERVISOR)
+    sup = bearer(await login(client, "sup"))
+    a = await create(client, sup)
+    b = await create(client, sup, full_name="Ikkinchi Odam", phones=[{"number": "901112233"}])
+    c = await create(client, sup, full_name="Uchinchi Odam", phones=[{"number": "901112244"}])
+    assert (
+        await client.post(
+            f"/api/patients/{a['id']}/merge", json={"source_id": b["id"]}, headers=sup
+        )
+    ).status_code == 200
+
+    # b is now a tombstone: neither side of a new merge may be one
+    for target, source in ((b, c), (c, b)):
+        resp = await client.post(
+            f"/api/patients/{target['id']}/merge", json={"source_id": source["id"]}, headers=sup
+        )
+        assert resp.status_code == 400 and resp.json()["detail"] == "already_merged"
+    missing = await client.post(
+        f"/api/patients/{a['id']}/merge", json={"source_id": str(uuid.uuid4())}, headers=sup
+    )
+    assert missing.status_code == 404
+
+    # a stale copy in the session is refreshed by the lock (another merge committed meanwhile)
+    async with SessionLocal() as s:
+        stale = await s.get(Patient, uuid.UUID(c["id"]))
+        async with SessionLocal() as other:
+            (await other.get(Patient, uuid.UUID(c["id"]))).merged_into_id = uuid.UUID(a["id"])
+            await other.commit()
+        assert stale.merged_into_id is None
+        locked, _ = await patients_service.lock_pair(s, stale.id, uuid.UUID(a["id"]))
+        assert locked is stale and locked.merged_into_id == uuid.UUID(a["id"])

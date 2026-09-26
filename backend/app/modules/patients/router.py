@@ -171,8 +171,7 @@ async def set_do_not_call(
 ) -> PatientOut:
     patient = await _get_patient(session, patient_id)
     _live_or_409(patient)
-    patient.do_not_call = body.do_not_call
-    patient.do_not_call_reason = body.reason if body.do_not_call else None
+    await service.set_do_not_call(session, patient, body.do_not_call, body.reason)
     audit.record(
         session,
         "patient.do_not_call",
@@ -267,8 +266,9 @@ async def merge_patients(
     session: SessionDep,
     user: Merger,
 ) -> PatientOut:
-    target = await _get_patient(session, patient_id)
-    source = await _get_patient(session, body.source_id)
+    target, source = await service.lock_pair(session, patient_id, body.source_id)
+    if target is None or source is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="patient_not_found")
     target_before, source_before = service.snapshot(target), service.snapshot(source)
     try:
         await service.merge(session, target, source)

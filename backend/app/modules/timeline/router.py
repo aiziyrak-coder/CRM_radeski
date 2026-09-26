@@ -4,17 +4,19 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import CurrentUser, SessionDep
+from app.core.deps import CurrentUser, SessionDep, client_ip
 from app.modules.ai.models import AnalysisStatus, CallAnalysis
+from app.modules.audit import service as audit
 from app.modules.catalog.models import Doctor, Service
 from app.modules.leads.models import Lead
 from app.modules.messaging.models import Conversation, Message
 from app.modules.patients.models import Patient, PatientKind
+from app.modules.scheduling import service as scheduling
 from app.modules.scheduling.models import Appointment, Recommendation
 from app.modules.tasks.models import Task, TaskAttempt, TaskStatus
 from app.modules.telephony.models import Call, RecordingStatus
@@ -41,12 +43,14 @@ class Event(BaseModel):
     reason: str | None = None
     user: str | None = None
     ref: uuid.UUID | None = None  # phone: the call id (recording)
+    user_id: uuid.UUID | None = None  # phone: the operator (may play their own recordings)
     seconds: int | None = None  # phone: talk time
 
 
 @router.get("/{patient_id}/timeline")
 async def timeline(
     patient_id: uuid.UUID,
+    request: Request,
     session: SessionDep,
     user: CurrentUser,
     lang: Literal["uz", "ru"] = "uz",
@@ -54,6 +58,15 @@ async def timeline(
     patient = await session.get(Patient, patient_id)
     if patient is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="patient_not_found")
+    # ARXITEKTURA 5: a doctor sees only patients they have (had) an appointment with
+    if not await scheduling.can_see_patient(session, user, patient_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="forbidden")
+    # TZ 5: looking at a patient's history is audited like opening the card
+    audit.record(
+        session, "patient.timeline", user_id=user.id, entity="patient", entity_id=patient.id,
+        ip=client_ip(request),
+    )  # fmt: skip
+    await session.commit()
 
     def name(o: Doctor | Service) -> str:
         return o.name_ru if lang == "ru" else o.name_uz
@@ -200,6 +213,7 @@ async def timeline(
                     title=call.direction.value,
                     detail=summary,  # the AI summary of the conversation
                     user=user_name,
+                    user_id=call.user_id,
                     ref=call.id if call.recording_status is RecordingStatus.READY else None,
                     seconds=call.talk_seconds,
                 )
