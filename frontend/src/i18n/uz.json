@@ -18,7 +18,8 @@
     "audit": "Audit jurnali",
     "profile": "Profil",
     "diagnoses": "Tashxislar",
-    "settings": "Sozlamalar"
+    "settings": "Sozlamalar",
+    "calls": "Qo'ng'iroqlar"
   },
   "roles": {
     "operator": "Operator",
@@ -121,7 +122,8 @@
     "resetPassword": "Parolni tiklash",
     "newPassword": "Yangi parol",
     "passwordReset": "Parol yangilandi. Foydalanuvchining barcha sessiyalari yopildi.",
-    "usernameHint": "Kichik lotin harflari, raqamlar, . _ -"
+    "usernameHint": "Kichik lotin harflari, raqamlar, . _ -",
+    "extension": "Ichki raqam"
   },
   "audit": {
     "title": "Audit jurnali",
@@ -617,7 +619,16 @@
     "bookedByPhone": "Tel. orqali yozildi",
     "created": "Yaratilgan qabullar",
     "na": "—",
-    "telephonyNote": "Telefoniya ulangach"
+    "telephonyNote": "Telefoniya hali ulanmagan: qo'ng'iroq ko'rsatkichlari Asterisk ishga tushgach paydo bo'ladi.",
+    "inboundHint": "javob: {{answered}} · javobsiz: {{missed}}",
+    "answerRate": "Javob berilgan",
+    "callbacks_one": "{{count}} kishi qayta qo'ng'iroq so'radi",
+    "callbacks_other": "{{count}} kishi qayta qo'ng'iroq so'radi",
+    "avgWait": "O'rtacha kutish",
+    "seconds": "{{n}} s",
+    "outboundCalls": "Chiquvchi qo'ng'iroqlar",
+    "talk": "suhbat: {{n}} daq",
+    "talkMin": "Suhbat, daq"
   },
   "scripts": {
     "title": "Skriptlar",
@@ -642,5 +653,88 @@
     "legacyVisit": "Oxirgi tashrif (eski baza)",
     "upcoming": "kelgusi",
     "empty": "Hali hech narsa yo'q"
+  },
+  "phone": {
+    "status": {
+      "connecting": "Ulanmoqda…",
+      "registered": "Onlayn",
+      "offline": "Aloqa yo'q",
+      "disabled": "O'chirilgan"
+    },
+    "dialPlaceholder": "90 000 22 44",
+    "call": "Qo'ng'iroq",
+    "echoTest": "Mikrofonni sinash (exo-test 600)",
+    "offlineHint": "Telefoniya serveriga ulanib bo'lmadi. Internetni tekshiring; tizim o'zi qayta ulanadi.",
+    "failed": "Qo'ng'iroq amalga oshmadi: {{cause}}",
+    "incoming": "Kiruvchi",
+    "outgoing": "Chiquvchi",
+    "state": {
+      "ringing": "jiringlayapti",
+      "calling": "chaqirilmoqda",
+      "active": "suhbat",
+      "held": "kutishda"
+    },
+    "answer": "Javob berish",
+    "reject": "Rad etish",
+    "hangup": "Tugatish",
+    "mute": "Ovozsiz",
+    "unmute": "Ovozni yoqish",
+    "hold": "Kutish",
+    "resume": "Davom etish",
+    "unknownCaller": "Bazada yo'q raqam",
+    "newLead": "Murojaat yaratish",
+    "lead": "Murojaat",
+    "openTasks_one": "{{count}} ta ochiq vazifa",
+    "openTasks_other": "{{count}} ta ochiq vazifa",
+    "nextVisit": "Keyingi qabul",
+    "causes": {
+      "User Denied Media Access": "mikrofon topilmadi yoki ruxsat berilmagan",
+      "Busy": "raqam band",
+      "Unavailable": "abonent mavjud emas",
+      "Not Found": "raqam topilmadi",
+      "No Answer": "javob bermadi",
+      "Connection Error": "server bilan aloqa yo'q",
+      "Request Timeout": "server javob bermadi",
+      "RTP Timeout": "ovoz uzildi",
+      "SIP Failure Code": "operator tarmog'i xatosi",
+      "Address Incomplete": "raqam to'liq emas",
+      "Authentication Error": "kirish xatosi"
+    },
+    "dismiss": "Yopish"
+  },
+  "calls": {
+    "title": "Qo'ng'iroqlar jurnali",
+    "day": "Kun",
+    "direction": "Yo'nalish",
+    "status": "Holat",
+    "who": "Kimniki",
+    "all": "Hammasi",
+    "mine": "Meniki",
+    "time": "Vaqt",
+    "caller": "Kim",
+    "operator": "Operator",
+    "wait": "Kutdi",
+    "talk": "Suhbat",
+    "lead": "Murojaat",
+    "empty": "Bu kunda qo'ng'iroq yo'q",
+    "summary": "Jami: {{total}} · javob berilgan: {{answered}} · javobsiz: {{missed}}",
+    "listen": "Tinglash",
+    "noRecording": "Yozuv topilmadi",
+    "processing": "Yozuv tayyorlanmoqda…",
+    "callbackRequested": "1 ni bosib qayta qo'ng'iroq so'radi",
+    "dir": {
+      "in": "Kiruvchi",
+      "out": "Chiquvchi"
+    },
+    "statuses": {
+      "ringing": "Jiringlayapti",
+      "answered": "Javob berildi",
+      "missed": "Javobsiz",
+      "abandoned": "Kutmay qo'ydi",
+      "after_hours": "Ish vaqtidan tashqari",
+      "no_answer": "Ko'tarmadi",
+      "busy": "Band",
+      "failed": "Ulanmadi"
+    }
   }
 }

@@ -141,6 +141,8 @@ sudo certbot --nginx -d crm.radeski.uz
 
 ## 4. Zaxira nusxa (cron)
 
+Telefoniyani ulash — alohida: `docs/06_TELEFONIYA.md`.
+
 Crontab faqat qo'shish usulida o'zgartiriladi, hech qachon almashtirilmaydi:
 
 ```bash

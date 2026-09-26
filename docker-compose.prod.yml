@@ -36,6 +36,8 @@ services:
 
   api:
     <<: *backend
+    volumes:
+      - radeski_crm_recordings:/recordings
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
       interval: 15s
@@ -49,6 +51,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://crm:${DB_PASSWORD:?DB_PASSWORD kerak}@db:5432/crm
       REDIS_URL: redis://redis:6379/0
       DB_NULL_POOL: "true"
+    volumes:
+      - radeski_crm_recordings:/recordings
     command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
 
   beat:
@@ -89,6 +93,27 @@ services:
       retries: 5
     logging: *logging
 
+  # Asterisk. Started only with `--profile telephony` once .env has the PBX_*/SIP_* values
+  # (docs/06_TELEFONIYA.md). SIP and RTP must be reachable from Uztelecom and the operators'
+  # browsers, so these UDP ports are published on all interfaces; its HTTP/WebSocket port is
+  # internal and reached through web (/ws).
+  pbx:
+    build: ./telephony
+    profiles: ["telephony"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PBX_CRM_URL: http://web
+    ports:
+      - "${PBX_SIP_PORT:-5060}:${PBX_SIP_PORT:-5060}/udp"
+      - "${PBX_RTP_START:-17000}-${PBX_RTP_END:-17039}:${PBX_RTP_START:-17000}-${PBX_RTP_END:-17039}/udp"
+    volumes:
+      - radeski_crm_recordings:/var/spool/asterisk/recordings
+      - radeski_crm_pbx_sounds:/opt/radeski/sounds-custom
+    logging: *logging
+
 volumes:
   radeski_crm_pgdata:
   radeski_crm_redisdata:
+  radeski_crm_recordings:
+  radeski_crm_pbx_sounds:

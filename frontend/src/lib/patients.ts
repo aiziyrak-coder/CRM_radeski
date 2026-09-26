@@ -95,7 +95,14 @@ export function searchPatients(params: {
 export const getPatient = (id: string) => api<Patient>(`/patients/${id}`)
 
 export type TimelineKind =
-  'registered' | 'legacy_visit' | 'lead' | 'appointment' | 'call' | 'planned_call' | 'recommendation'
+  | 'registered'
+  | 'legacy_visit'
+  | 'lead'
+  | 'appointment'
+  | 'call'
+  | 'planned_call'
+  | 'recommendation'
+  | 'phone'
 
 export interface TimelineEvent {
   kind: TimelineKind
@@ -105,6 +112,8 @@ export interface TimelineEvent {
   detail: string | null
   reason: string | null
   user: string | null
+  ref: string | null
+  seconds: number | null
 }
 
 export const getTimeline = (id: string, lang: Language) =>

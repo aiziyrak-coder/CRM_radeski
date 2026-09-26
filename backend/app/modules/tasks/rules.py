@@ -13,7 +13,7 @@ from app.core import clinic_time
 from app.core.events import on
 from app.modules.catalog.models import Service
 from app.modules.leads import service as leads
-from app.modules.leads.models import OPEN_STAGES, Lead, LeadStage
+from app.modules.leads.models import OPEN_STAGES, Lead, LeadChannel, LeadStage
 from app.modules.patients.models import Patient, PatientKind
 from app.modules.scheduling.models import (
     ACTIVE_STATUSES,
@@ -32,6 +32,7 @@ from app.modules.tasks.models import (
     TaskStatus,
     TaskType,
 )
+from app.modules.telephony.models import UNANSWERED_INBOUND, Call, CallDirection, CallStatus
 
 S = AppointmentStatus
 CONFIRM_TYPES = (TaskType.CONFIRM_VISIT,)
@@ -169,6 +170,49 @@ async def _on_lead(session: AsyncSession, p: dict[str, Any]) -> None:
         patient_id=lead.patient_id, lead_id=lead.id, note=lead.interest,
         dedupe_key=f"lead:{lead.id}",
     )  # fmt: skip
+
+
+@on("call.finished")
+async def _on_call(session: AsyncSession, p: dict[str, Any]) -> None:
+    call: Call = p["call"]
+    if call.direction is not CallDirection.IN:
+        return
+    if call.status is CallStatus.ANSWERED:
+        # the patient got through: an earlier missed call is resolved
+        if call.patient_id:
+            await tasks.close_open(
+                session, types=(TaskType.MISSED_CALL,), patient_id=call.patient_id,
+                outcome=Outcome.DONE,
+            )  # fmt: skip
+        for lead in await session.scalars(
+            select(Lead).where(Lead.phone == call.phone, Lead.stage.in_(OPEN_STAGES))
+        ):
+            leads.mark_contacted(lead)
+        return
+    if call.status not in UNANSWERED_INBOUND or not call.phone:
+        return
+    # TZ 4.5 #1: every missed call is called back, first thing when the clinic is open
+    now = clinic_time.now()
+    due = now if clinic_time.is_open(now) else clinic_time.next_opening(now)
+    note = "1 ni bosib qayta qo'ng'iroq so'radi" if call.callback_requested else None
+    day = clinic_time.local(due).date().isoformat()
+    if call.patient_id:
+        await tasks.create_task(
+            session, TaskType.MISSED_CALL, due_at=due, patient_id=call.patient_id,
+            dedupe_key=f"missed:{call.patient_id}:{day}", note=note,
+        )  # fmt: skip
+    elif call.lead_id:
+        await tasks.create_task(
+            session, TaskType.MISSED_CALL, due_at=due, lead_id=call.lead_id,
+            dedupe_key=f"missed:lead:{call.lead_id}:{day}", note=note,
+        )  # fmt: skip
+    else:
+        # an unknown number becomes an inquiry (its "new inquiry" task carries the 15-min SLA)
+        lead, _ = await leads.create_lead(
+            session, channel=LeadChannel.MISSED_CALL, phone=call.phone,
+            note=note or "Javobsiz qo'ng'iroq",
+        )  # fmt: skip
+        call.lead_id = lead.id
 
 
 @on("task.result")

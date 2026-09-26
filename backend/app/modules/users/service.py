@@ -21,7 +21,9 @@ _DUMMY_HASH = hash_password("timing-equalizer")
 
 REUSE_GRACE_SECONDS = 30
 
-AUDITED_FIELDS = ("username", "full_name", "role", "language", "branch_id", "is_active")
+AUDITED_FIELDS = (
+    "username", "full_name", "role", "language", "branch_id", "is_active", "sip_extension",
+)  # fmt: skip
 
 
 class UsernameTakenError(Exception):

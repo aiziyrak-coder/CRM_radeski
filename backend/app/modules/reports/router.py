@@ -14,6 +14,12 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 Manager = Annotated[User, Depends(require_roles(Role.SUPERVISOR, Role.OWNER, Role.ADMIN))]
 
 KPI_LABELS = {
+    "inbound_calls": "Kiruvchi qo'ng'iroqlar / Входящие звонки",
+    "inbound_answer_rate": "Javob berilgan, % / Отвечено, %",
+    "inbound_missed": "Javobsiz / Пропущено",
+    "avg_wait_sec": "O'rtacha kutish, s / Среднее ожидание, с",
+    "outbound_calls": "Chiquvchi qo'ng'iroqlar / Исходящие звонки",
+    "talk_minutes": "Suhbat, daq / Разговор, мин",
     "leads_total": "Murojaatlar / Обращения",
     "lead_to_booking": "Murojaat → yozuv, % / Обращение → запись, %",
     "first_response_median_min": "Birinchi javob (mediana, daq) / Первый ответ (медиана, мин)",

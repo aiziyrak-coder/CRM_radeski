@@ -47,10 +47,12 @@ Claude Code bilan ishlash tartibi: bitta sessiyada bitta vazifa (masalan, "0.3 �
 
 | # | Vazifa | Qabul mezoni |
 |---|---|---|
-| 3.1 | Asterisk konteyneri, Uztelecom SIP-trunk, IVR, bitta operatorli navbat (kutish musiqasi, "1 ni bosing — qayta qo'ng'iroq"), stereo yozuv | Tashqi raqamga qo'ng'iroq qilib bo'ladi. Operator band bo'lsa, ikkinchi qo'ng'iroq navbatda kutadi yoki qayta qo'ng'iroq vazifasiga aylanadi |
-| 3.2 | JsSIP softfon brauzerda: kiruvchi va chiquvchi qo'ng'iroq, ushlab turish, o'chirish | Operator faqat quloqchin bilan ishlaydi |
-| 3.3 | ARI hodisalari → `calls` jadvali, kiruvchi qo'ng'iroqda kartochka popup'i, javobsiz qo'ng'iroq vazifasi | Qo'ng'iroq kelganda 2 soniyada karta ochiladi |
-| 3.4 | Click-to-call: vazifadan qo'ng'iroq, qo'ng'iroqni vazifa va bemorga bog'lash, yozuvni tinglash | Qo'ng'iroq jurnali to'liq, yozuvlar tinglanadi |
+| 3.1 🟡 | Asterisk konteyneri, Uztelecom SIP-trunk, IVR, bitta operatorli navbat (kutish musiqasi, "1 ni bosing — qayta qo'ng'iroq"), stereo yozuv | Tashqi raqamga qo'ng'iroq qilib bo'ladi. Operator band bo'lsa, ikkinchi qo'ng'iroq navbatda kutadi yoki qayta qo'ng'iroq vazifasiga aylanadi |
+| 3.2 ✅ | JsSIP softfon brauzerda: kiruvchi va chiquvchi qo'ng'iroq, ushlab turish, o'chirish | Operator faqat quloqchin bilan ishlaydi |
+| 3.3 ✅ | Asterisk hodisalari (HTTP) → `calls` jadvali, kiruvchi qo'ng'iroqda kartochka popup'i, javobsiz qo'ng'iroq vazifasi | Qo'ng'iroq kelganda 2 soniyada karta ochiladi |
+| 3.4 ✅ | Click-to-call: vazifadan qo'ng'iroq, qo'ng'iroqni vazifa va bemorga bog'lash, yozuvni tinglash | Qo'ng'iroq jurnali to'liq, yozuvlar tinglanadi |
+
+🟡 3.1: PBX, IVR, navbat, "1 ni bosing", yozuv va CRM hodisalari lokal sinovdan o'tgan (qo'ng'iroq simulyatsiyasi, test-agent). Uztelecom trunk SIP login/parol kelgach ulanadi — `docs/06_TELEFONIYA.md`.
 
 ## 4-bosqich. AI tahlil (~2 hafta)
 

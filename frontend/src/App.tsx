@@ -1,24 +1,27 @@
-import type { ReactNode } from 'react'
+import { lazy, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router'
 import Layout from './components/Layout'
 import { useAuth } from './lib/auth-context'
 import { NAV_ITEMS, type NavItem } from './lib/navigation'
-import AuditPage from './pages/AuditPage'
-import CampaignsPage from './pages/CampaignsPage'
-import LeadsPage from './pages/LeadsPage'
-import ReportsPage from './pages/ReportsPage'
-import TasksPage from './pages/TasksPage'
-import DiagnosesPage from './pages/DiagnosesPage'
 import HomePage from './pages/HomePage'
-import MyDayPage from './pages/MyDayPage'
-import PatientCardPage from './pages/PatientCardPage'
-import PatientsPage from './pages/PatientsPage'
 import LoginPage from './pages/LoginPage'
-import ProfilePage from './pages/ProfilePage'
-import SchedulePage from './pages/SchedulePage'
-import SettingsPage from './pages/SettingsPage'
 import SoonPage from './pages/SoonPage'
-import UsersPage from './pages/UsersPage'
+
+// pages load on demand: the first screen doesn't pay for every module
+const AuditPage = lazy(() => import('./pages/AuditPage'))
+const CallsPage = lazy(() => import('./pages/CallsPage'))
+const CampaignsPage = lazy(() => import('./pages/CampaignsPage'))
+const LeadsPage = lazy(() => import('./pages/LeadsPage'))
+const ReportsPage = lazy(() => import('./pages/ReportsPage'))
+const TasksPage = lazy(() => import('./pages/TasksPage'))
+const DiagnosesPage = lazy(() => import('./pages/DiagnosesPage'))
+const MyDayPage = lazy(() => import('./pages/MyDayPage'))
+const PatientCardPage = lazy(() => import('./pages/PatientCardPage'))
+const PatientsPage = lazy(() => import('./pages/PatientsPage'))
+const ProfilePage = lazy(() => import('./pages/ProfilePage'))
+const SchedulePage = lazy(() => import('./pages/SchedulePage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const UsersPage = lazy(() => import('./pages/UsersPage'))
 
 const PAGES: Record<string, ReactNode> = {
   '/': <HomePage />,
@@ -34,6 +37,7 @@ const PAGES: Record<string, ReactNode> = {
   '/leads': <LeadsPage />,
   '/campaigns': <CampaignsPage />,
   '/reports': <ReportsPage />,
+  '/calls': <CallsPage />,
 }
 
 // detail pages inherit the roles of their menu section

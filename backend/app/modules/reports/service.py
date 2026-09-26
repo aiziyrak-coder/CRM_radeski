@@ -16,6 +16,7 @@ from app.modules.scheduling.models import (
     RecommendationStatus,
 )
 from app.modules.tasks.models import REACHED, Outcome, TaskAttempt, TaskType
+from app.modules.telephony.models import UNANSWERED_INBOUND, Call, CallDirection, CallStatus
 from app.modules.users.models import User
 
 S = AppointmentStatus
@@ -31,6 +32,50 @@ def _pct(part: int, whole: int) -> float | None:
 
 async def _count(session: AsyncSession, stmt) -> int:
     return await session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+
+
+async def call_stats(
+    session: AsyncSession, start: datetime, end: datetime, user_id: uuid.UUID | None = None
+) -> dict[str, Any]:
+    """Telephony figures; all None while the PBX isn't connected (no call was ever logged)."""
+    keys = (
+        "inbound_calls", "inbound_answered", "inbound_missed", "inbound_answer_rate",
+        "callbacks_requested", "avg_wait_sec", "outbound_calls", "outbound_answered",
+        "talk_minutes",
+    )  # fmt: skip
+    if not await session.scalar(select(func.count()).select_from(Call)):
+        return dict.fromkeys(keys)
+    period = [Call.started_at >= start, Call.started_at < end]
+    if user_id:  # an operator's own view: calls they handled
+        period.append(Call.user_id == user_id)
+    answered = Call.status == CallStatus.ANSWERED
+    inbound = Call.direction == CallDirection.IN
+    row = (
+        await session.execute(
+            select(
+                func.count().filter(inbound),
+                func.count().filter(inbound, answered),
+                func.count().filter(inbound, Call.status.in_(UNANSWERED_INBOUND)),
+                func.count().filter(inbound, Call.callback_requested),
+                func.avg(Call.wait_seconds).filter(inbound, Call.wait_seconds.is_not(None)),
+                func.count().filter(~inbound),
+                func.count().filter(~inbound, answered),
+                func.coalesce(func.sum(Call.talk_seconds), 0),
+            ).where(*period)
+        )
+    ).one()
+    total_in, in_answered, missed, callbacks, avg_wait, out, out_answered, talk = row
+    return {
+        "inbound_calls": total_in,
+        "inbound_answered": in_answered,
+        "inbound_missed": missed,
+        "inbound_answer_rate": _pct(in_answered, total_in),
+        "callbacks_requested": callbacks,
+        "avg_wait_sec": round(float(avg_wait)) if avg_wait is not None else None,
+        "outbound_calls": out,
+        "outbound_answered": out_answered,
+        "talk_minutes": round(talk / 60),
+    }
 
 
 async def daily(
@@ -86,7 +131,7 @@ async def daily(
     reached = sum(n for o, n in by_outcome.items() if o in REACHED)
     return {
         "date": day.isoformat(),
-        "inbound_calls": None,  # filled by the telephony module (phase 3)
+        **await call_stats(session, start, end, user_id),
         "outbound_attempts": total_attempts,
         "reached": reached,
         "dial_rate": _pct(reached, total_attempts),
@@ -235,9 +280,19 @@ async def kpi(session: AsyncSession, date_from: date, date_to: date) -> dict[str
             )
         ).all()
     )
+    talk_by_user = dict(
+        (
+            await session.execute(
+                select(Call.user_id, func.coalesce(func.sum(Call.talk_seconds), 0))
+                .where(Call.started_at >= start, Call.started_at < end, Call.user_id.is_not(None))
+                .group_by(Call.user_id)
+            )
+        ).all()
+    )
     return {
         "from": date_from.isoformat(),
         "to": date_to.isoformat(),
+        **await call_stats(session, start, end),
         "leads_total": leads_total,
         "lead_to_booking": _pct(leads_booked, leads_total),
         "first_response_median_min": round(median_seconds / 60, 1)
@@ -260,6 +315,7 @@ async def kpi(session: AsyncSession, date_from: date, date_to: date) -> dict[str
                 "dial_rate": _pct(r, n),
                 "booked_by_phone": b,
                 "appointments_created": bookings_by_user.get(uid, 0),
+                "talk_minutes": round(talk_by_user.get(uid, 0) / 60),
             }
             for uid, name, n, r, b in operators
         ],  # fmt: skip
@@ -286,6 +342,7 @@ def kpi_workbook(data: dict[str, Any], labels: dict[str, str]) -> bytes:
             "Dozvon %",
             "Tel. orqali yozildi",
             "Yaratilgan qabullar",
+            "Suhbat, daq",
         ]
     )
     for o in data["operators"]:
@@ -297,6 +354,7 @@ def kpi_workbook(data: dict[str, Any], labels: dict[str, str]) -> bytes:
                 o["dial_rate"],
                 o["booked_by_phone"],
                 o["appointments_created"],
+                o["talk_minutes"],
             ]
         )
     for sheet in (ws, ops):

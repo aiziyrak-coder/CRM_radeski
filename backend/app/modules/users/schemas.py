@@ -23,6 +23,7 @@ class UserOut(BaseModel):
     language: Language
     branch_id: uuid.UUID | None
     is_active: bool
+    sip_extension: str | None = None
     last_login_at: datetime | None
     created_at: datetime
 
@@ -42,6 +43,7 @@ class UserUpdate(BaseModel):
     language: Language | None = None
     branch_id: uuid.UUID | None = None
     is_active: bool | None = None
+    sip_extension: str | None = Field(default=None, pattern=r"^\d{3,4}$")
 
 
 class PasswordSet(BaseModel):

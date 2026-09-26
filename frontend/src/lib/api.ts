@@ -33,6 +33,7 @@ export type User = {
   language: Language
   branch_id: string | null
   is_active: boolean
+  sip_extension: string | null
   last_login_at: string | null
   created_at: string
 }

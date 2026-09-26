@@ -88,3 +88,21 @@ def poll_site() -> int:
         return created
 
     return _run(intake)
+
+
+@celery_app.task(name="jobs.process_recording")
+def process_recording(call_id: str) -> str | None:
+    """Queued by the PBX event endpoint for every answered call."""
+    import uuid
+
+    from app.modules.telephony.service import process_recording as convert
+
+    status = _run(lambda session: convert(session, uuid.UUID(call_id)))
+    return status.value if status else None
+
+
+@celery_app.task(name="jobs.retry_recordings")
+def retry_recordings() -> int:
+    from app.modules.telephony.service import retry_recordings as run
+
+    return _run(run)

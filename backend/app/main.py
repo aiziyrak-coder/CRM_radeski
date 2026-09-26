@@ -19,6 +19,7 @@ from app.modules.scheduling.router import router as scheduling_router
 from app.modules.scripts.router import router as scripts_router
 from app.modules.scripts.router import seed_if_empty
 from app.modules.tasks.router import router as tasks_router
+from app.modules.telephony.router import router as telephony_router
 from app.modules.timeline.router import router as timeline_router
 from app.modules.users.router import auth_router, users_router
 
@@ -56,5 +57,6 @@ for router in (
     campaigns_router,
     reports_router,
     timeline_router,
+    telephony_router,
 ):
     app.include_router(router, prefix="/api")

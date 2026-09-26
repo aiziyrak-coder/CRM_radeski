@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import BookingDialog from '../components/BookingDialog'
 import PatientName from '../components/PatientName'
+import { CallButton } from '../components/Softphone'
 import ScriptButton from '../components/ScriptView'
 import { Badge, Button, Card, ErrorText, Field, Input, Select } from '../components/ui'
 import { useAuth } from '../lib/auth-context'
@@ -170,6 +171,7 @@ function TaskCard({ task }: { task: Task }) {
           {task.note && <div className="mt-1 text-sm whitespace-pre-line text-slate-700">{task.note}</div>}
         </div>
         <div className="flex flex-wrap gap-1">
+          <CallButton number={task.patient_phone} taskId={task.id} />
           <ScriptButton code={task.script_code} language={task.patient_language} values={scriptValues} />
           {task.type !== 'confirm_visit' && task.type !== 'post_procedure' && (
             <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => void startBooking()}>

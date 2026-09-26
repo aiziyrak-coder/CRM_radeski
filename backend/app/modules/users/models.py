@@ -33,6 +33,8 @@ class User(UUIDPk, Timestamps, Base):
     branch_id: Mapped[uuid.UUID | None] = mapped_column(default=None)
     password_hash: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # softphone extension (PBX_EXTENSIONS); one per operator
+    sip_extension: Mapped[str | None] = mapped_column(String(10), unique=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

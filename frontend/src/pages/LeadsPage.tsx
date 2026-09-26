@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import BookingDialog from '../components/BookingDialog'
+import { CallButton } from '../components/Softphone'
 import { Badge, Button, Card, ErrorText, Field, Input, Select } from '../components/ui'
 import {
   LEAD_CHANNELS,
@@ -156,6 +157,7 @@ function LeadRow({ lead }: { lead: Lead }) {
               {formatPhone(lead.phone)}
             </a>
           )}
+          {open && <CallButton number={lead.phone} />}
         </td>
         <td className="py-2 pr-3">{t(`leads.channels.${lead.channel}`)}</td>
         <td className="py-2 pr-3 text-slate-700">{lead.interest}</td>

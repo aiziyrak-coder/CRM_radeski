@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     site_admin_username: str = ""
     site_admin_password: str = ""
 
+    # Telephony (Asterisk): the dialplan posts call events with PBX_API_SECRET; softphone
+    # passwords are HMAC(PBX_SIP_SECRET, "ext:<n>") — empty secrets switch telephony off
+    pbx_api_secret: str = ""
+    pbx_sip_secret: str = ""
+    pbx_extensions: str = "101 102 103 104"
+    recordings_dir: str = "/recordings"
+
     # Celery workers run each job in a fresh event loop: pooled asyncpg connections can't be reused
     db_null_pool: bool = False
 

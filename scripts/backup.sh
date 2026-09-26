@@ -22,3 +22,9 @@ fi
 
 find "$BACKUP_DIR" -name 'crm-*.sql.gz' -mtime +"$KEEP_DAYS" -delete
 echo "$(date -Is) ok $file"
+
+# call recordings (phase 3): copy the last two days' MP3s; the folder keeps growing, nothing is
+# rotated here — retention is a clinic decision
+mkdir -p "$BACKUP_DIR/recordings"
+docker compose -f docker-compose.prod.yml exec -T worker     sh -c 'cd /recordings && find . -name "*.mp3" -mtime -2 -print0 | tar --null -cf - -T -'     | tar -xf - -C "$BACKUP_DIR/recordings"
+echo "$(date -Is) ok recordings"

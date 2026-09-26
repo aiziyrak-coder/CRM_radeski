@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Button, Card, ErrorText, Field, Input, Select } from '../components/ui'
 import { api, type User } from '../lib/api'
 import { useAuth } from '../lib/auth-context'
-import { downloadKpi, getDaily, getKpi } from '../lib/ops'
+import { downloadKpi, getDaily, getKpi, type CallStats } from '../lib/ops'
 import { addDays, clinicDate } from '../lib/scheduling'
 
 function Stat({ label, value, hint }: { label: string; value: string | number | null; hint?: string }) {
@@ -18,6 +18,36 @@ function Stat({ label, value, hint }: { label: string; value: string | number | 
 }
 
 const pct = (v: number | null) => (v === null ? null : `${v}%`)
+
+function CallStatsRow({ data }: { data: CallStats }) {
+  const { t } = useTranslation()
+  if (data.inbound_calls === null) {
+    return <p className="text-sm text-slate-500">{t('reports.telephonyNote')}</p>
+  }
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <Stat
+        label={t('reports.inbound')}
+        value={data.inbound_calls}
+        hint={t('reports.inboundHint', { answered: data.inbound_answered, missed: data.inbound_missed })}
+      />
+      <Stat
+        label={t('reports.answerRate')}
+        value={pct(data.inbound_answer_rate)}
+        hint={t('reports.callbacks', { count: data.callbacks_requested ?? 0 })}
+      />
+      <Stat
+        label={t('reports.avgWait')}
+        value={data.avg_wait_sec === null ? null : t('reports.seconds', { n: data.avg_wait_sec })}
+      />
+      <Stat
+        label={t('reports.outboundCalls')}
+        value={data.outbound_calls}
+        hint={t('reports.talk', { n: data.talk_minutes })}
+      />
+    </div>
+  )
+}
 
 function Daily() {
   const { t } = useTranslation()
@@ -63,12 +93,8 @@ function Daily() {
       <ErrorText error={error} />
       {data && (
         <>
+          <CallStatsRow data={data} />
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat
-              label={t('reports.inbound')}
-              value={data.inbound_calls}
-              hint={data.inbound_calls === null ? t('reports.telephonyNote') : undefined}
-            />
             <Stat label={t('reports.outbound')} value={data.outbound_attempts} />
             <Stat label={t('reports.dialRate')} value={pct(data.dial_rate)} />
             <Stat label={t('reports.newLeads')} value={data.new_leads} />
@@ -144,6 +170,7 @@ function KpiView() {
       <ErrorText error={error ?? download.error} />
       {data && (
         <>
+          <CallStatsRow data={data} />
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label={t('reports.leadsTotal')} value={data.leads_total} />
             <Stat label={t('reports.leadToBooking')} value={pct(data.lead_to_booking)} />
@@ -170,11 +197,12 @@ function KpiView() {
                 <thead className="text-xs text-slate-500 uppercase">
                   <tr>
                     <th className="pb-2">{t('reports.operator')}</th>
-                    <th className="pb-2 text-right">{t('reports.attempts')}</th>
-                    <th className="pb-2 text-right">{t('reports.reached')}</th>
-                    <th className="pb-2 text-right">{t('reports.dialRate')}</th>
-                    <th className="pb-2 text-right">{t('reports.bookedByPhone')}</th>
-                    <th className="pb-2 text-right">{t('reports.created')}</th>
+                    <th className="pb-2 pl-3 text-right">{t('reports.attempts')}</th>
+                    <th className="pb-2 pl-3 text-right">{t('reports.reached')}</th>
+                    <th className="pb-2 pl-3 text-right">{t('reports.dialRate')}</th>
+                    <th className="pb-2 pl-3 text-right">{t('reports.bookedByPhone')}</th>
+                    <th className="pb-2 pl-3 text-right">{t('reports.created')}</th>
+                    <th className="pb-2 pl-3 text-right">{t('reports.talkMin')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -186,6 +214,7 @@ function KpiView() {
                       <td className="py-2 text-right tabular-nums">{pct(o.dial_rate) ?? '—'}</td>
                       <td className="py-2 text-right tabular-nums">{o.booked_by_phone}</td>
                       <td className="py-2 text-right tabular-nums">{o.appointments_created}</td>
+                      <td className="py-2 text-right tabular-nums">{o.talk_minutes}</td>
                     </tr>
                   ))}
                 </tbody>

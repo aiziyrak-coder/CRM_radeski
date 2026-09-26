@@ -87,14 +87,16 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
   )
 }
 
-function UserRow({ user, isSelf }: { user: User; isSelf: boolean }) {
+const CALL_CENTER: Role[] = ['operator', 'supervisor', 'admin']
+
+function UserRow({ user, isSelf, extensions }: { user: User; isSelf: boolean; extensions: string[] }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [resetting, setResetting] = useState(false)
   const [newPassword, setNewPassword] = useState('')
 
   const update = useMutation({
-    mutationFn: (body: Partial<Pick<User, 'role' | 'is_active'>>) =>
+    mutationFn: (body: Partial<Pick<User, 'role' | 'is_active' | 'sip_extension'>>) =>
       api<User>(`/users/${user.id}`, { method: 'PATCH', body }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['users'] }),
   })
@@ -127,6 +129,24 @@ function UserRow({ user, isSelf }: { user: User; isSelf: boolean }) {
               </option>
             ))}
           </Select>
+          {CALL_CENTER.includes(user.role) && extensions.length > 0 && (
+            <label className="mt-2 flex items-center gap-2 text-xs whitespace-nowrap text-slate-600">
+              {t('users.extension')}
+              <Select
+                value={user.sip_extension ?? ''}
+                disabled={update.isPending}
+                onChange={(e) => update.mutate({ sip_extension: e.target.value || null })}
+                className="w-24 py-1 text-xs"
+              >
+                <option value="">—</option>
+                {extensions.map((x) => (
+                  <option key={x} value={x}>
+                    {x}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          )}
         </td>
         <td className="py-3 pr-4">
           <Badge tone={user.is_active ? 'good' : 'neutral'}>
@@ -198,6 +218,11 @@ export default function UsersPage() {
     queryKey: ['users'],
     queryFn: () => api<User[]>('/users'),
   })
+  const { data: extensions = [] } = useQuery({
+    queryKey: ['telephony', 'extensions'],
+    queryFn: () => api<string[]>('/telephony/extensions'),
+    staleTime: Infinity,
+  })
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -224,7 +249,7 @@ export default function UsersPage() {
             </thead>
             <tbody>
               {users?.map((u) => (
-                <UserRow key={u.id} user={u} isSelf={u.id === me?.id} />
+                <UserRow key={u.id} user={u} isSelf={u.id === me?.id} extensions={extensions} />
               ))}
             </tbody>
           </table>

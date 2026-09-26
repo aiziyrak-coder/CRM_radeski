@@ -7,11 +7,14 @@ import BookingDialog from '../components/BookingDialog'
 import PatientForm from '../components/PatientForm'
 import PatientName from '../components/PatientName'
 import PatientTags from '../components/PatientTags'
+import RecordingPlayer from '../components/RecordingPlayer'
+import { CallButton } from '../components/Softphone'
 import PatientRow from '../components/PatientRow'
 import { Badge, Button, Card, ErrorText, Field, Input, Notice } from '../components/ui'
 import { useAuth } from '../lib/auth-context'
 import { categoryName, getCategories } from '../lib/diagnoses'
 import type { AppointmentStatus } from '../lib/scheduling'
+import { formatDuration } from '../lib/telephony'
 import {
   addPhone,
   deletePhone,
@@ -110,6 +113,7 @@ const KIND_STYLE: Record<TimelineKind, string> = {
   lead: 'bg-sky-500',
   appointment: 'bg-teal-600',
   call: 'bg-amber-500',
+  phone: 'bg-orange-500',
   planned_call: 'bg-amber-300',
   recommendation: 'bg-violet-500',
 }
@@ -150,6 +154,20 @@ function EventLine({ e }: { e: TimelineEvent }) {
           )}
           {e.detail && <div className="whitespace-pre-line text-slate-600">{e.detail}</div>}
           {e.user && <div className="text-xs text-slate-500">{e.user}</div>}
+        </>
+      )
+    case 'phone':
+      return (
+        <>
+          <span className="font-medium">{t(`calls.dir.${e.title}`)}</span>{' '}
+          <Badge tone={e.status === 'answered' ? 'good' : 'neutral'}>{t(`calls.statuses.${e.status}`)}</Badge>
+          {e.seconds ? <span className="text-slate-600"> · {formatDuration(e.seconds)}</span> : null}
+          {e.user && <span className="text-xs text-slate-500"> · {e.user}</span>}
+          {e.ref && (
+            <div className="mt-1">
+              <RecordingPlayer callId={e.ref} />
+            </div>
+          )}
         </>
       )
     case 'lead':
@@ -295,7 +313,8 @@ function Phones({ patient }: { patient: Patient }) {
             <div>
               <a href={`tel:${ph.number}`} className="font-medium text-teal-800 hover:underline">
                 {ph.display}
-              </a>
+              </a>{' '}
+              <CallButton number={ph.number} />
               {ph.note && <span className="ml-2 text-sm text-slate-500">{ph.note}</span>}
               {ph.is_primary && (
                 <span className="ml-2">

@@ -221,9 +221,21 @@ export const setCampaignStatus = (id: string, status: Campaign['status']) =>
 
 // --- reports ---
 
-export type DailyReport = {
-  date: string
+/** Telephony figures (all null until the PBX has reported a call). */
+export type CallStats = {
   inbound_calls: number | null
+  inbound_answered: number | null
+  inbound_missed: number | null
+  inbound_answer_rate: number | null
+  callbacks_requested: number | null
+  avg_wait_sec: number | null
+  outbound_calls: number | null
+  outbound_answered: number | null
+  talk_minutes: number | null
+}
+
+export type DailyReport = CallStats & {
+  date: string
   outbound_attempts: number
   reached: number
   dial_rate: number | null
@@ -238,7 +250,7 @@ export type DailyReport = {
   outcomes: Record<string, number>
   campaign_outcomes: Record<string, number>
 }
-export type Kpi = {
+export type Kpi = CallStats & {
   from: string
   to: string
   leads_total: number
@@ -260,6 +272,7 @@ export type Kpi = {
     dial_rate: number | null
     booked_by_phone: number
     appointments_created: number
+    talk_minutes: number
   }[]
 }
 export const getDaily = (date: string, userId?: string) =>

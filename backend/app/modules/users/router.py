@@ -204,6 +204,11 @@ async def update_user(
         # an admin locking themselves out would leave nobody able to manage users
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="cannot_demote_self")
 
+    if body.sip_extension and await session.scalar(
+        select(User.id).where(User.sip_extension == body.sip_extension, User.id != user.id)
+    ):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="extension_taken")
+
     before = service.snapshot(user)
     service.apply_update(user, body)
     if body.is_active is False:

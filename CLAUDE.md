@@ -8,9 +8,9 @@ Read before any work: `docs/01_TZ.md` (requirements), `docs/02_ARXITEKTURA.md` (
 - UI strings only via i18n (`frontend/src/i18n/uz.json`, `ru.json`) — never hardcode UI text. Default language: uz (Latin).
 
 ## Stack
-- Backend: Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, Pydantic v2, Celery + Beat, PostgreSQL 16, Redis 7, MinIO.
+- Backend: Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, Pydantic v2, Celery + Beat, PostgreSQL 16, Redis 7. Call recordings in the `radeski_crm_recordings` volume (stereo MP3 via ffmpeg).
 - Frontend: React 19 + Vite + TypeScript, Tailwind, shadcn/ui, TanStack Query, i18next, react-big-calendar, JsSIP.
-- Telephony: Asterisk 20 (PJSIP, ARI), Uztelecom SIP trunk.
+- Telephony: Asterisk 20 (PJSIP + WebRTC) in `telephony/` (compose profile `telephony`), Uztelecom SIP trunk. Call events reach the CRM from the dialplan over HTTP (`/api/telephony/events`, `X-PBX-Secret`), not ARI. Test calls without a trunk: `test-inbound` / `test-agent` contexts (docs/06_TELEFONIYA.md).
 - AI: OpenAI API (official `openai` Python SDK, key in `.env` as `OPENAI_API_KEY`) for both STT (transcription) and LLM analysis with structured outputs (JSON Schema). No GPU on the server. Both behind adapter interfaces in `backend/app/integrations/{stt,llm}/`.
 - Deployment: same server as radeski.uz (our team's site, FastAPI). Separate compose project + separate DB; shared nginx (`crm.radeski.uz`). Site → CRM webhook for new appointment requests.
 - Call center: 2 operators in shifts, only 1 online at a time → tasks go to a shared queue, not to a person.

@@ -49,8 +49,8 @@ Versiya 0.1 · 2026-09-26 · TZ bilan birga o'qiladi: [01_TZ.md](01_TZ.md)
 | Frontend | **React 19 + Vite + TypeScript**, Tailwind, shadcn/ui, TanStack Query, React Router, i18next (uz/ru) | Sayt ham Vite/React'da. Komponentlar tayyor |
 | Kalendar | **react-big-calendar** (MIT, resurs ko'rinishi bor) | FullCalendar'ning resurs rejimi pullik litsenziya talab qiladi |
 | Softfon | **JsSIP** (WebRTC) | Brauzerdan qo'ng'iroq qilish uchun |
-| ATS | **Asterisk 20** (PJSIP, ARI) | Bepul, o'z serverda ishlaydi, stereo yozuv qiladi, Uztelecom SIP-trunk bilan ishlaydi |
-| Fayl saqlash | **MinIO** | Qo'ng'iroq yozuvlari va import fayllari uchun |
+| ATS | **Asterisk 20** (PJSIP, WebRTC; hodisalar dialplan'dan HTTP orqali) | Bepul, o'z serverda ishlaydi, stereo yozuv qiladi, Uztelecom SIP-trunk bilan ishlaydi |
+| Fayl saqlash | Docker volume (`radeski_crm_recordings`) | Qo'ng'iroq yozuvlari (stereo MP3). Hajm oshsa MinIO'ga o'tkaziladi |
 | LLM | **OpenAI API** (rasmiy `openai` Python SDK, API kalit bilan), JSON sxema bo'yicha structured outputs | Jamoa qarori. Aniq model benchmarkda tanlanadi. Adapter orqali ulanadi, kerak bo'lsa boshqa provayderga almashtiriladi |
 | STT | **OpenAI transkripsiya API** (serverda GPU yo'q) | O'zbekcha aralash nutq sifati haqiqiy yozuvlarda tekshiriladi (4.2-bo'lim). Adapter tufayli natija yomon bo'lsa, boshqa provayderga almashtirish mumkin |
 | Joylashtirish | Docker Compose, nginx + Let's Encrypt | Bitta server, oddiy boshqaruv |
@@ -154,8 +154,8 @@ Barcha generatorlar **idempotent**: bir xil ish qayta ishga tushsa, dublikat vaz
 ### 4.2. Qo'ng'iroqni tahlil qilish konveyeri
 
 ```
-Asterisk: qo'ng'iroq tugadi (ARI StasisEnd / AMI Hangup)
-  → api: calls yozuvi yangilanadi, yozuv MinIO'ga yuklanadi
+Asterisk: qo'ng'iroq tugadi (dialplan hangup handler → POST /api/telephony/events)
+  → api: calls yozuvi yangilanadi; worker ikki mono WAV'ni stereo MP3 ga aylantiradi
   → worker: transcribe(call)
         stereo → 2 kanal (L = operator, R = bemor)
         STT adapter → segmentlar [{kanal, t0, t1, matn}]
@@ -176,10 +176,15 @@ Asterisk: qo'ng'iroq tugadi (ARI StasisEnd / AMI Hangup)
 
 ### 4.3. Kiruvchi qo'ng'iroq
 
+> **3-bosqichdagi qaror.** ARI/AMI o'rniga Asterisk har qo'ng'iroq oxirida (hangup handler)
+> CRM'ga imzolangan HTTP so'rov yuboradi (`telephony/asterisk/extensions.conf`). Doimiy ulanish,
+> qayta ulanish mantig'i va alohida tinglovchi xizmat kerak bo'lmaydi; popup esa softfonning
+> o'zidan (INVITE) chiqadi. Batafsil: `docs/06_TELEFONIYA.md`.
+
 ```
 Uztelecom → Asterisk: IVR (salom + "suhbat yozib olinadi") → queue(operators, ringall, 30s)
-   ARI hodisasi → api: raqam bo'yicha bemor yoki murojaat qidiriladi (yo'q bo'lsa lead yaratiladi)
-   → ws → operator brauzerida kartochka ochiladi, qo'ng'iroq JsSIP'da jiringlaydi
+   JsSIP'ga INVITE keladi → brauzer /api/telephony/lookup dan bemor/murojaatni oladi → popup
+   (qo'ng'iroq tugagach hodisa CRM'ga keladi; notanish javobsiz raqamdan murojaat yaratiladi)
    30s ichida javob yo'q yoki ish vaqtidan tashqari → ovozli xabar + call.missed → vazifa
 ```
 

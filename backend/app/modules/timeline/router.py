@@ -15,6 +15,7 @@ from app.modules.leads.models import Lead
 from app.modules.patients.models import Patient, PatientKind
 from app.modules.scheduling.models import Appointment, Recommendation
 from app.modules.tasks.models import Task, TaskAttempt, TaskStatus
+from app.modules.telephony.models import Call, RecordingStatus
 from app.modules.users.models import Role, User
 
 router = APIRouter(prefix="/patients", tags=["timeline"])
@@ -24,8 +25,9 @@ PER_SOURCE = 100
 SEES_CALLS = (Role.OPERATOR, Role.SUPERVISOR, Role.REGISTRAR, Role.OWNER, Role.ADMIN)
 
 Kind = Literal[
-    "registered", "legacy_visit", "lead", "appointment", "call", "planned_call", "recommendation"
-]
+    "registered", "legacy_visit", "lead", "appointment", "call", "planned_call", "recommendation",
+    "phone",
+]  # fmt: skip
 
 
 class Event(BaseModel):
@@ -36,6 +38,8 @@ class Event(BaseModel):
     detail: str | None = None  # services, interest or note
     reason: str | None = None
     user: str | None = None
+    ref: uuid.UUID | None = None  # phone: the call id (recording)
+    seconds: int | None = None  # phone: talk time
 
 
 @router.get("/{patient_id}/timeline")
@@ -172,6 +176,26 @@ async def timeline(
         ):
             events.append(
                 Event(kind="planned_call", at=task.due_at, title=task.type.value, detail=task.note)
+            )
+
+        phone_calls = await session.execute(
+            select(Call, User.full_name)
+            .outerjoin(User, User.id == Call.user_id)
+            .where(Call.patient_id == patient_id)
+            .order_by(Call.started_at.desc())
+            .limit(PER_SOURCE)
+        )
+        for call, user_name in phone_calls:
+            events.append(
+                Event(
+                    kind="phone",
+                    at=call.started_at,
+                    status=call.status.value,
+                    title=call.direction.value,
+                    user=user_name,
+                    ref=call.id if call.recording_status is RecordingStatus.READY else None,
+                    seconds=call.talk_seconds,
+                )
             )
 
     events.sort(key=lambda e: e.at, reverse=True)

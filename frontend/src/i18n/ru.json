@@ -18,7 +18,8 @@
     "audit": "Журнал аудита",
     "profile": "Профиль",
     "diagnoses": "Диагнозы",
-    "settings": "Настройки"
+    "settings": "Настройки",
+    "calls": "Звонки"
   },
   "roles": {
     "operator": "Оператор",
@@ -121,7 +122,8 @@
     "resetPassword": "Сбросить пароль",
     "newPassword": "Новый пароль",
     "passwordReset": "Пароль обновлён. Все сессии пользователя закрыты.",
-    "usernameHint": "Строчные латинские буквы, цифры, . _ -"
+    "usernameHint": "Строчные латинские буквы, цифры, . _ -",
+    "extension": "Внутренний номер"
   },
   "audit": {
     "title": "Журнал аудита",
@@ -617,7 +619,18 @@
     "bookedByPhone": "Записано по телефону",
     "created": "Создано записей",
     "na": "—",
-    "telephonyNote": "После подключения телефонии"
+    "telephonyNote": "Телефония ещё не подключена: показатели звонков появятся после запуска Asterisk.",
+    "inboundHint": "отвечено: {{answered}} · пропущено: {{missed}}",
+    "answerRate": "Отвечено",
+    "callbacks_one": "{{count}} просит перезвонить",
+    "callbacks_few": "{{count}} просят перезвонить",
+    "callbacks_many": "{{count}} просят перезвонить",
+    "callbacks_other": "{{count}} просят перезвонить",
+    "avgWait": "Среднее ожидание",
+    "seconds": "{{n}} с",
+    "outboundCalls": "Исходящие звонки",
+    "talk": "разговор: {{n}} мин",
+    "talkMin": "Разговор, мин"
   },
   "scripts": {
     "title": "Скрипты",
@@ -642,5 +655,90 @@
     "legacyVisit": "Последний визит (старая база)",
     "upcoming": "предстоит",
     "empty": "Пока ничего нет"
+  },
+  "phone": {
+    "status": {
+      "connecting": "Подключение…",
+      "registered": "Онлайн",
+      "offline": "Нет связи",
+      "disabled": "Выключен"
+    },
+    "dialPlaceholder": "90 000 22 44",
+    "call": "Позвонить",
+    "echoTest": "Проверить микрофон (эхо-тест 600)",
+    "offlineHint": "Нет связи с сервером телефонии. Проверьте интернет — система переподключится сама.",
+    "failed": "Звонок не удался: {{cause}}",
+    "incoming": "Входящий",
+    "outgoing": "Исходящий",
+    "state": {
+      "ringing": "звонит",
+      "calling": "вызов",
+      "active": "разговор",
+      "held": "на удержании"
+    },
+    "answer": "Ответить",
+    "reject": "Отклонить",
+    "hangup": "Завершить",
+    "mute": "Без звука",
+    "unmute": "Включить звук",
+    "hold": "Удержание",
+    "resume": "Продолжить",
+    "unknownCaller": "Номера нет в базе",
+    "newLead": "Создать обращение",
+    "lead": "Обращение",
+    "openTasks_one": "{{count}} открытая задача",
+    "openTasks_few": "{{count}} открытые задачи",
+    "openTasks_many": "{{count}} открытых задач",
+    "openTasks_other": "{{count}} открытых задач",
+    "nextVisit": "Следующий приём",
+    "causes": {
+      "User Denied Media Access": "микрофон не найден или нет разрешения",
+      "Busy": "номер занят",
+      "Unavailable": "абонент недоступен",
+      "Not Found": "номер не найден",
+      "No Answer": "нет ответа",
+      "Connection Error": "нет связи с сервером",
+      "Request Timeout": "сервер не ответил",
+      "RTP Timeout": "звук прервался",
+      "SIP Failure Code": "ошибка сети оператора",
+      "Address Incomplete": "неполный номер",
+      "Authentication Error": "ошибка авторизации"
+    },
+    "dismiss": "Закрыть"
+  },
+  "calls": {
+    "title": "Журнал звонков",
+    "day": "День",
+    "direction": "Направление",
+    "status": "Статус",
+    "who": "Чьи",
+    "all": "Все",
+    "mine": "Мои",
+    "time": "Время",
+    "caller": "Кто",
+    "operator": "Оператор",
+    "wait": "Ожидание",
+    "talk": "Разговор",
+    "lead": "Обращение",
+    "empty": "В этот день звонков нет",
+    "summary": "Всего: {{total}} · отвечено: {{answered}} · пропущено: {{missed}}",
+    "listen": "Прослушать",
+    "noRecording": "Запись не найдена",
+    "processing": "Запись обрабатывается…",
+    "callbackRequested": "Нажал 1 — просит перезвонить",
+    "dir": {
+      "in": "Входящий",
+      "out": "Исходящий"
+    },
+    "statuses": {
+      "ringing": "Звонит",
+      "answered": "Отвечен",
+      "missed": "Пропущен",
+      "abandoned": "Не дождался",
+      "after_hours": "Нерабочее время",
+      "no_answer": "Не ответил",
+      "busy": "Занято",
+      "failed": "Не соединилось"
+    }
   }
 }
