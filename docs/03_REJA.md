@@ -71,10 +71,12 @@ Claude Code bilan ishlash tartibi: bitta sessiyada bitta vazifa (masalan, "0.3 �
 
 | # | Vazifa |
 |---|---|
-| 5.1 | Telegram: bot yoki Business ulanishi, yagona inbox |
-| 5.2 | SMS provayderi, shablonlar, yozuv tasdig'i va eslatmalar |
-| 5.3 | Instagram Direct (Meta ilovasi tekshiruvidan o'tgach) |
-| 5.4 | Chatlar uchun AI javob loyihasi |
+| 5.1 ✅ | Telegram: bot yoki Business ulanishi, yagona inbox |
+| 5.2 ✅ | SMS provayderi, shablonlar, yozuv tasdig'i va eslatmalar |
+| 5.3 🟡 | Instagram Direct (Meta ilovasi tekshiruvidan o'tgach) |
+| 5.4 ✅ | Chatlar uchun AI javob loyihasi |
+
+Kod tayyor va soxta provayderlar bilan test qilingan; jonli ishga tushirish uchun bot tokeni, SMS shartnomasi (va shablonlar moderatsiyasi), Meta ilovasi tekshiruvi kerak — `docs/08_KANALLAR.md`.
 
 ## 6-bosqich. Rivojlantirish
 

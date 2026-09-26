@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 import app.modules.ai.rules  # noqa: F401  - operator review of AI suggestions
+import app.modules.messaging.rules  # noqa: F401  - booking confirmations, reminders
 import app.modules.tasks.rules  # noqa: F401  - registers the task rules on domain events
 from app.api import health
 from app.core.config import get_settings
@@ -15,6 +16,8 @@ from app.modules.catalog.router import router as catalog_router
 from app.modules.diagnoses.router import router as diagnoses_router
 from app.modules.leads.router import router as leads_router
 from app.modules.leads.router import webhook_router
+from app.modules.messaging.router import router as messaging_router
+from app.modules.messaging.router import webhook_router as messaging_webhooks
 from app.modules.patients.router import router as patients_router
 from app.modules.reports.router import router as reports_router
 from app.modules.scheduling.router import router as scheduling_router
@@ -61,5 +64,7 @@ for router in (
     timeline_router,
     telephony_router,
     ai_router,
+    messaging_router,
+    messaging_webhooks,
 ):
     app.include_router(router, prefix="/api")

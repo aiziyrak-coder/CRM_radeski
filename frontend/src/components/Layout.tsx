@@ -1,8 +1,10 @@
+import { useQuery } from '@tanstack/react-query'
 import { Suspense, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, Outlet } from 'react-router'
 import { api, type Language, type User } from '../lib/api'
 import { useAuth } from '../lib/auth-context'
+import { getUnread } from '../lib/messaging'
 import { navFor } from '../lib/navigation'
 import { SoftphoneProvider } from '../lib/softphone'
 import { CallPanel, SoftphoneStatus } from './Softphone'
@@ -11,6 +13,13 @@ import { Badge, Button } from './ui'
 function Sidebar({ onNavigate }: { onNavigate: () => void }) {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const inbox = Boolean(user && navFor(user.role).some((i) => i.path === '/inbox'))
+  const { data: unread } = useQuery({
+    queryKey: ['inbox', 'unread'],
+    queryFn: getUnread,
+    enabled: inbox,
+    refetchInterval: 30_000,
+  })
   if (!user) return null
   return (
     <>
@@ -34,6 +43,11 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
           >
             <span>{t(item.labelKey)}</span>
             {item.soon && <Badge>{t('soon.badge')}</Badge>}
+            {item.path === '/inbox' && (unread?.conversations ?? 0) > 0 && (
+              <span className="rounded-full bg-teal-700 px-1.5 text-[11px] text-white tabular-nums">
+                {unread!.conversations}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>

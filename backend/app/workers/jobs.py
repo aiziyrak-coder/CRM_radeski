@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.modules.ai.rules  # noqa: F401
+import app.modules.messaging.rules  # noqa: F401
 import app.modules.tasks.rules  # noqa: F401  - event handlers must be registered in workers too
 from app.core.db import SessionLocal
 from app.workers.celery_app import celery_app
@@ -141,3 +142,34 @@ def weekly_digest() -> str:
     from app.modules.ai.qa import make_digest
 
     return str(_run(lambda session: make_digest(session)).id)
+
+
+@celery_app.task(name="jobs.deliver_message")
+def deliver_message(message_id: str) -> str | None:
+    import uuid
+
+    from app.modules.messaging.service import deliver
+
+    status = _run(lambda session: deliver(session, uuid.UUID(message_id)))
+    return status.value if status else None
+
+
+@celery_app.task(name="jobs.deliver_due")
+def deliver_due() -> int:
+    """Every minute: queued messages whose time has come (reminders after quiet hours, retries)."""
+    from app.modules.messaging.service import deliver, due_messages
+
+    async def run(session):
+        ids = await due_messages(session)
+        for message_id in ids:
+            await deliver(session, message_id)
+        return len(ids)
+
+    return _run(run)
+
+
+@celery_app.task(name="jobs.reminders")
+def reminders() -> int:
+    from app.modules.messaging.rules import send_reminders
+
+    return _run(send_reminders)

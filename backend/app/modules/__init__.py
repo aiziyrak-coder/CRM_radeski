@@ -5,6 +5,7 @@ from app.modules.campaigns import models as campaigns_models  # noqa: F401
 from app.modules.catalog import models as catalog_models  # noqa: F401
 from app.modules.diagnoses import models as diagnoses_models  # noqa: F401
 from app.modules.leads import models as leads_models  # noqa: F401
+from app.modules.messaging import models as messaging_models  # noqa: F401
 from app.modules.patients import models as patients_models  # noqa: F401
 from app.modules.scheduling import models as scheduling_models  # noqa: F401
 from app.modules.scripts import models as scripts_models  # noqa: F401

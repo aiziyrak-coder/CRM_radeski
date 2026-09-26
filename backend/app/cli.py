@@ -123,6 +123,24 @@ async def _stt_benchmark(args: argparse.Namespace) -> None:
             print(f"    {e}")
 
 
+async def _telegram_setup() -> None:
+    from app.core.config import get_settings
+    from app.integrations.sms import SendError
+    from app.integrations.telegram import get_telegram
+
+    s = get_settings()
+    bot = get_telegram()
+    if bot is None or not s.telegram_webhook_secret:
+        sys.exit("TELEGRAM_BOT_TOKEN va TELEGRAM_WEBHOOK_SECRET .env da bo'lishi kerak")
+    url = f"{s.public_url.rstrip('/')}/api/integrations/telegram/webhook"
+    try:
+        await bot.set_webhook(url, s.telegram_webhook_secret)
+        me = await bot.call("getMe", {})
+    except SendError as exc:
+        sys.exit(f"Telegram xatosi: {exc}")
+    print(f"Webhook o'rnatildi: {url} (bot @{me.get('username')})")
+
+
 async def _sync_catalog() -> None:
     from app.modules.catalog.sync import sync_from_site
 
@@ -152,6 +170,7 @@ def main() -> None:
     sub.add_parser("sync-catalog", help="filial, shifokor va xizmatlarni radeski.uz'dan olish")
     sub.add_parser("sync-diagnoses", help="tashxislar uchun toifa takliflarini yangilash")
     sub.add_parser("ai-diagnoses", help="qoidaga tushmagan tashxislarga AI toifa taklifi")
+    sub.add_parser("telegram-setup", help="Telegram bot webhook'ini CRM manziliga o'rnatish")
     bench = sub.add_parser(
         "stt-benchmark", help="STT modellarini haqiqiy qo'ng'iroqlarda solishtirish"
     )
@@ -171,6 +190,8 @@ def main() -> None:
         asyncio.run(_sync_diagnoses())
     elif args.command == "ai-diagnoses":
         asyncio.run(_ai_diagnoses())
+    elif args.command == "telegram-setup":
+        asyncio.run(_telegram_setup())
     elif args.command == "stt-benchmark":
         asyncio.run(_stt_benchmark(args))
     elif args.command == "import-legacy":

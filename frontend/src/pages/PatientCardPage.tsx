@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, Navigate, useLocation, useParams } from 'react-router'
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router'
 import { StatusPill } from '../components/AppointmentPanel'
 import BookingDialog from '../components/BookingDialog'
 import PatientForm from '../components/PatientForm'
@@ -12,6 +12,7 @@ import { CallButton } from '../components/Softphone'
 import PatientRow from '../components/PatientRow'
 import { Badge, Button, Card, ErrorText, Field, Input, Notice } from '../components/ui'
 import { useAuth } from '../lib/auth-context'
+import { openSms } from '../lib/messaging'
 import { categoryName, getCategories } from '../lib/diagnoses'
 import type { AppointmentStatus } from '../lib/scheduling'
 import { formatDuration } from '../lib/telephony'
@@ -114,6 +115,7 @@ const KIND_STYLE: Record<TimelineKind, string> = {
   appointment: 'bg-teal-600',
   call: 'bg-amber-500',
   phone: 'bg-orange-500',
+  message: 'bg-sky-400',
   planned_call: 'bg-amber-300',
   recommendation: 'bg-violet-500',
 }
@@ -169,6 +171,16 @@ function EventLine({ e }: { e: TimelineEvent }) {
               <RecordingPlayer callId={e.ref} />
             </div>
           )}
+        </>
+      )
+    case 'message':
+      return (
+        <>
+          <span className="font-medium">
+            {t(e.status === 'in' ? 'timeline.messageIn' : 'timeline.messageOut')} ·{' '}
+            {t(`inbox.channels.${e.title}`, { defaultValue: e.title ?? '' })}
+          </span>
+          {e.detail && <div className="whitespace-pre-line text-slate-600">{e.detail}</div>}
         </>
       )
     case 'lead':
@@ -281,8 +293,31 @@ function Conditions({ patient }: { patient: Patient }) {
   )
 }
 
+function SmsButton({ patient }: { patient: Patient }) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const open = useMutation({
+    mutationFn: () => openSms(patient.id),
+    onSuccess: (conv) => void navigate(`/inbox?c=${conv.id}`),
+  })
+  return (
+    <div className="mt-3">
+      <Button
+        variant="secondary"
+        className="px-2 py-1 text-xs"
+        disabled={open.isPending}
+        onClick={() => open.mutate()}
+      >
+        {t('inbox.writeSms')}
+      </Button>
+      <ErrorText error={open.error} />
+    </div>
+  )
+}
+
 function Phones({ patient }: { patient: Patient }) {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const setPatient = useSetPatient(patient.id)
   const [number, setNumber] = useState('')
   const [note, setNote] = useState('')
@@ -361,6 +396,9 @@ function Phones({ patient }: { patient: Patient }) {
       <div className="mt-2">
         <ErrorText error={add.error ?? primary.error ?? remove.error} />
       </div>
+      {['operator', 'supervisor', 'registrar', 'admin'].includes(user?.role ?? '') && (
+        <SmsButton patient={patient} />
+      )}
     </Card>
   )
 }

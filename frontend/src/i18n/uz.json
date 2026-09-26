@@ -19,7 +19,8 @@
     "profile": "Profil",
     "diagnoses": "Tashxislar",
     "settings": "Sozlamalar",
-    "calls": "Qo'ng'iroqlar"
+    "calls": "Qo'ng'iroqlar",
+    "inbox": "Chatlar"
   },
   "roles": {
     "operator": "Operator",
@@ -81,7 +82,11 @@
     "phone_or_name_required": "Telefon yoki ismni kiriting",
     "campaign_not_found": "Kampaniya topilmadi",
     "script_not_found": "Skript topilmadi",
-    "bad_range": "Sana oralig'i noto'g'ri"
+    "bad_range": "Sana oralig'i noto'g'ri",
+    "sms_off": "SMS provayder ulanmagan",
+    "no_phone": "Bemorda telefon raqami yo'q",
+    "ai_disabled": "AI ulanmagan (OPENAI_API_KEY)",
+    "ai_failed": "AI javob bera olmadi, qayta urinib ko'ring"
   },
   "home": {
     "welcome": "Xush kelibsiz, {{name}}",
@@ -654,7 +659,9 @@
     "registered": "CRM'da ro'yxatga olindi",
     "legacyVisit": "Oxirgi tashrif (eski baza)",
     "upcoming": "kelgusi",
-    "empty": "Hali hech narsa yo'q"
+    "empty": "Hali hech narsa yo'q",
+    "messageIn": "Xabar (bemordan)",
+    "messageOut": "Xabar (klinikadan)"
   },
   "phone": {
     "status": {
@@ -828,5 +835,47 @@
     "noOutcome": "Natija aniq emas",
     "confirm": "Tasdiqlash",
     "edit": "Tuzatish"
+  },
+  "inbox": {
+    "title": "Chatlar",
+    "all": "Barcha kanallar",
+    "unreadOnly": "Faqat o'qilmagan",
+    "empty": "Hozircha yozishmalar yo'q",
+    "pick": "Chapdan suhbatni tanlang",
+    "notLinked": "Bemor kartasiga bog'lanmagan",
+    "lead": "Murojaat",
+    "link": "Bemorga bog'lash",
+    "channelOff": "Bu kanal hali ulanmagan: xabar navbatda turadi va ulangach yuboriladi (yoki xato bo'ladi).",
+    "templates": "Shablon qo'yish…",
+    "aiDraft": "AI javob loyihasi",
+    "aiHint": "AI loyihasi — o'qib chiqing va kerak bo'lsa tuzating, keyin yuboring.",
+    "placeholder": "Javob yozing (Ctrl+Enter — yuborish)",
+    "send": "Yuborish",
+    "smsNote": "{{n}} belgi (SMS: 70 kirill / 160 lotin belgi = 1 xabar)",
+    "template": "shablon",
+    "writeSms": "SMS yozish",
+    "noChannels": "Hech bir kanal ulanmagan. Telegram bot tokeni, Instagram yoki SMS provayder ma'lumotlari .env ga yoziladi (docs/08_KANALLAR.md).",
+    "channels": {
+      "telegram": "Telegram",
+      "instagram": "Instagram",
+      "sms": "SMS"
+    },
+    "status": {
+      "received": "qabul qilindi",
+      "queued": "navbatda",
+      "sent": "yuborildi",
+      "delivered": "yetkazildi",
+      "failed": "xato"
+    },
+    "errors": {
+      "telegram_off": "Telegram bot ulanmagan",
+      "instagram_off": "Instagram ulanmagan",
+      "sms_off": "SMS provayder ulanmagan"
+    }
+  },
+  "templates": {
+    "title": "Xabar shablonlari",
+    "hint": "Avtomatik xabarlar (yozuv tasdig'i, eslatma, bog'lana olmadik) va operator uchun tayyor matnlar. SMS matni provayderda moderatsiyadan o'tgan matn bilan so'zma-so'z bir xil bo'lishi kerak. {sana}, {vaqt}, {shifokor}, {manzil}, {telefon}, {tayyorgarlik} — avtomatik to'ldiriladi.",
+    "chars": "{{n}} belgi"
   }
 }

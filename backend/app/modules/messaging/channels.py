@@ -1,0 +1,128 @@
+"""Incoming webhooks: Telegram updates and Instagram messaging events -> inbox."""
+
+from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core import clinic_time
+from app.modules.messaging import service
+from app.modules.messaging.models import Channel, Direction, Message, MessageStatus
+
+# text shown for non-text messages (media isn't downloaded in v1)
+PLACEHOLDERS = {
+    "photo": "[rasm]",
+    "voice": "[ovozli xabar]",
+    "audio": "[audio]",
+    "video": "[video]",
+    "video_note": "[video xabar]",
+    "document": "[fayl]",
+    "sticker": "[stiker]",
+    "location": "[joylashuv]",
+}
+CONTACT_THANKS = {
+    "uz": "Rahmat! Operatorimiz tez orada siz bilan bog'lanadi.",
+    "ru": "Спасибо! Оператор скоро свяжется с вами.",
+}
+
+
+def _text(msg: dict[str, Any]) -> str:
+    if msg.get("text") or msg.get("caption"):
+        return msg.get("text") or msg.get("caption")
+    if contact := msg.get("contact"):
+        return f"[kontakt: {contact.get('phone_number', '')}]"
+    return next((label for key, label in PLACEHOLDERS.items() if key in msg), "[xabar]")
+
+
+def _reply(chat_id: int, text: str, markup: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Telegram runs a method returned as the webhook response: no extra API call needed."""
+    body: dict[str, Any] = {"method": "sendMessage", "chat_id": chat_id, "text": text}
+    if markup:
+        body["reply_markup"] = markup
+    return body
+
+
+async def _log_outbound(session: AsyncSession, chat_id: str, text: str, title: str | None) -> None:
+    conv = await service.get_conversation(session, Channel.TELEGRAM, chat_id, title=title)
+    now = clinic_time.now()
+    session.add(
+        Message(
+            conversation_id=conv.id, direction=Direction.OUT, text=text,
+            status=MessageStatus.SENT, created_at=now, sent_at=now, attempts=0,
+        )
+    )  # fmt: skip
+    conv.last_message_at = now
+    await session.flush()
+
+
+async def telegram_update(session: AsyncSession, update: dict[str, Any]) -> dict[str, Any] | None:
+    msg = update.get("message") or update.get("business_message")
+    if not msg or (msg.get("chat") or {}).get("type") != "private":
+        return None  # groups, channels, edits, connection events
+    chat, sender = msg["chat"], msg.get("from") or {}
+    chat_id = str(chat["id"])
+    business = msg.get("business_connection_id")
+    name = " ".join(x for x in (chat.get("first_name"), chat.get("last_name")) if x)
+    title = name or (f"@{chat['username']}" if chat.get("username") else None)
+    lang = "ru" if (sender.get("language_code") or "").startswith("ru") else "uz"
+    text = _text(msg)
+
+    if business and sender.get("id") != chat["id"]:
+        # the clinic answered from its own Telegram app (Business account): keep the history whole
+        await _log_outbound(session, chat_id, text, title)
+        return None
+    if text.strip() == "/start" and not business:
+        welcome = await service.render(session, "telegram_welcome", lang, {})
+        if not welcome:
+            return None
+        await _log_outbound(session, chat_id, welcome, title)
+        label = "📞 Telefon raqamni yuborish" if lang == "uz" else "📞 Отправить номер"
+        keyboard = {
+            "keyboard": [[{"text": label, "request_contact": True}]],
+            "resize_keyboard": True,
+            "one_time_keyboard": True,
+        }
+        return _reply(chat["id"], welcome, keyboard)
+
+    contact = msg.get("contact") or {}
+    own_contact = contact and contact.get("user_id") in (None, chat["id"])
+    await service.receive(
+        session, Channel.TELEGRAM, chat_id, text, title=title,
+        external_msg_id=str(msg.get("message_id")),
+        phone=contact.get("phone_number") if own_contact else None,
+        business_connection_id=business,
+    )  # fmt: skip
+    if own_contact and not business:
+        await _log_outbound(session, chat_id, CONTACT_THANKS[lang], title)
+        return _reply(chat["id"], CONTACT_THANKS[lang], {"remove_keyboard": True})
+    return None
+
+
+async def instagram_event(session: AsyncSession, payload: dict[str, Any], own_id: str) -> int:
+    handled = 0
+    for entry in payload.get("entry", []):
+        for event in entry.get("messaging", []):
+            message = event.get("message") or {}
+            sender = str((event.get("sender") or {}).get("id", ""))
+            recipient = str((event.get("recipient") or {}).get("id", ""))
+            if not message or not sender:
+                continue
+            text = message.get("text") or ("[rasm]" if message.get("attachments") else "[xabar]")
+            if message.get("is_echo") or sender == own_id:
+                conv = await service.get_conversation(session, Channel.INSTAGRAM, recipient)
+                now = clinic_time.now()
+                session.add(
+                    Message(
+                        conversation_id=conv.id, direction=Direction.OUT, text=text,
+                        status=MessageStatus.SENT, external_id=message.get("mid"),
+                        created_at=now, sent_at=now, attempts=0,
+                    )
+                )  # fmt: skip
+                conv.last_message_at = now
+            else:
+                await service.receive(
+                    session, Channel.INSTAGRAM, sender, text, title="Instagram",
+                    external_msg_id=message.get("mid"),
+                )  # fmt: skip
+            handled += 1
+    await session.flush()
+    return handled

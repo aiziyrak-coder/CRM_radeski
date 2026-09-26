@@ -11,6 +11,7 @@ import SoonPage from './pages/SoonPage'
 const AuditPage = lazy(() => import('./pages/AuditPage'))
 const CallsPage = lazy(() => import('./pages/CallsPage'))
 const QaPage = lazy(() => import('./pages/QaPage'))
+const InboxPage = lazy(() => import('./pages/InboxPage'))
 const CampaignsPage = lazy(() => import('./pages/CampaignsPage'))
 const LeadsPage = lazy(() => import('./pages/LeadsPage'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
@@ -40,6 +41,7 @@ const PAGES: Record<string, ReactNode> = {
   '/reports': <ReportsPage />,
   '/calls': <CallsPage />,
   '/qa': <QaPage />,
+  '/inbox': <InboxPage />,
 }
 
 // detail pages inherit the roles of their menu section

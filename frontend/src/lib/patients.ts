@@ -103,6 +103,7 @@ export type TimelineKind =
   | 'planned_call'
   | 'recommendation'
   | 'phone'
+  | 'message'
 
 export interface TimelineEvent {
   kind: TimelineKind

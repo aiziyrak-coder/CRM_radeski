@@ -43,6 +43,27 @@ class Settings(BaseSettings):
     pbx_extensions: str = "101 102 103 104"
     recordings_dir: str = "/recordings"
 
+    # Messaging (phase 5). Public address of the CRM, used for webhooks and SMS status callbacks
+    public_url: str = "https://crm.radeski.uz"
+    # automatic messages go out only between these clinic hours (a night SMS is a complaint)
+    messages_from_hour: int = 9
+    messages_to_hour: int = 20
+    sms_provider: str = ""  # "eskiz" | "playmobile" | "" (off)
+    eskiz_email: str = ""
+    eskiz_password: str = ""
+    eskiz_from: str = "4546"
+    playmobile_url: str = "https://send.smsxabar.uz/broker-api/send"
+    playmobile_login: str = ""
+    playmobile_password: str = ""
+    playmobile_originator: str = "3700"
+    telegram_bot_token: str = ""
+    telegram_webhook_secret: str = ""
+    instagram_access_token: str = ""
+    instagram_app_secret: str = ""
+    instagram_verify_token: str = ""
+    instagram_user_id: str = ""
+    instagram_graph_version: str = "v23.0"
+
     # Celery workers run each job in a fresh event loop: pooled asyncpg connections can't be reused
     db_null_pool: bool = False
 

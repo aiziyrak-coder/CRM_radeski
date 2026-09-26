@@ -30,6 +30,8 @@ celery_app.conf.update(
         "diagnoses-0210": {"task": "jobs.sync_diagnoses", "schedule": crontab(hour=2, minute=10)},
         "recordings-retry": {"task": "jobs.retry_recordings", "schedule": crontab(minute="*/30")},
         "analyses-retry": {"task": "jobs.retry_analyses", "schedule": crontab(minute="15,45")},
+        "messages-every-minute": {"task": "jobs.deliver_due", "schedule": crontab()},
+        "reminders-1000": {"task": "jobs.reminders", "schedule": crontab(hour=10, minute=0)},
         "digest-monday-0800": {
             "task": "jobs.weekly_digest",
             "schedule": crontab(hour=8, minute=0, day_of_week="mon"),

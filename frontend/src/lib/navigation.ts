@@ -14,6 +14,7 @@ const ALL: readonly Role[] = ['operator', 'supervisor', 'registrar', 'doctor', '
 export const NAV_ITEMS: readonly NavItem[] = [
   { path: '/', labelKey: 'nav.home', roles: ALL },
   { path: '/tasks', labelKey: 'nav.tasks', roles: ['operator', 'supervisor', 'admin'] },
+  { path: '/inbox', labelKey: 'nav.inbox', roles: ['operator', 'supervisor', 'registrar', 'admin'] },
   { path: '/calls', labelKey: 'nav.calls', roles: ['operator', 'supervisor', 'owner', 'admin'] },
   { path: '/leads', labelKey: 'nav.leads', roles: ['operator', 'supervisor', 'registrar', 'admin'] },
   {

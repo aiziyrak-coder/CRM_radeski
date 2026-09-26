@@ -13,6 +13,7 @@ from app.core.deps import CurrentUser, SessionDep
 from app.modules.ai.models import AnalysisStatus, CallAnalysis
 from app.modules.catalog.models import Doctor, Service
 from app.modules.leads.models import Lead
+from app.modules.messaging.models import Conversation, Message
 from app.modules.patients.models import Patient, PatientKind
 from app.modules.scheduling.models import Appointment, Recommendation
 from app.modules.tasks.models import Task, TaskAttempt, TaskStatus
@@ -27,7 +28,7 @@ SEES_CALLS = (Role.OPERATOR, Role.SUPERVISOR, Role.REGISTRAR, Role.OWNER, Role.A
 
 Kind = Literal[
     "registered", "legacy_visit", "lead", "appointment", "call", "planned_call", "recommendation",
-    "phone",
+    "phone", "message",
 ]  # fmt: skip
 
 
@@ -201,6 +202,25 @@ async def timeline(
                     user=user_name,
                     ref=call.id if call.recording_status is RecordingStatus.READY else None,
                     seconds=call.talk_seconds,
+                )
+            )
+
+        chat = await session.execute(
+            select(Message, Conversation.channel)
+            .join(Conversation, Conversation.id == Message.conversation_id)
+            .where(Conversation.patient_id == patient_id)
+            .order_by(Message.created_at.desc())
+            .limit(PER_SOURCE)
+        )
+        for m, channel in chat:
+            events.append(
+                Event(
+                    kind="message",
+                    at=m.created_at,
+                    status=m.direction.value,
+                    title=channel.value,
+                    detail=m.text[:500],
+                    reason=m.template_code,
                 )
             )
 
