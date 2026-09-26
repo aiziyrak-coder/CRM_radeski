@@ -35,6 +35,7 @@ class CampaignIn(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     segment: Segment
     script_code: str | None = Field(default=None, max_length=30)
+    script_code_b: str | None = Field(default=None, max_length=30)
     daily_limit: int = Field(default=30, ge=1, le=500)
     ends_on: datetime | None = None
 
@@ -44,20 +45,23 @@ class CampaignOut(BaseModel):
     name: str
     segment: dict[str, Any]
     script_code: str | None
+    script_code_b: str | None
     daily_limit: int
     status: CampaignStatus
     ends_on: datetime | None
     created_at: datetime
     audience: int
     stats: dict[str, int]
+    ab: list[dict[str, Any]] | None = None
 
 
 async def to_out(session: SessionDep, c: Campaign) -> CampaignOut:
     return CampaignOut(
         id=c.id, name=c.name, segment=c.segment, script_code=c.script_code,
-        daily_limit=c.daily_limit, status=c.status, ends_on=c.ends_on, created_at=c.created_at,
+        script_code_b=c.script_code_b, daily_limit=c.daily_limit, status=c.status,
+        ends_on=c.ends_on, created_at=c.created_at,
         audience=await service.segment_size(session, c.segment),
-        stats=await service.stats(session, c.id),
+        stats=await service.stats(session, c.id), ab=await service.ab_stats(session, c),
     )  # fmt: skip
 
 
@@ -78,6 +82,7 @@ async def create_campaign(
 ) -> CampaignOut:
     campaign = Campaign(
         name=body.name, segment=body.segment.as_filter(), script_code=body.script_code,
+        script_code_b=body.script_code_b if body.script_code_b != body.script_code else None,
         daily_limit=body.daily_limit, ends_on=body.ends_on, status=CampaignStatus.DRAFT,
         created_by=user.id,
     )  # fmt: skip

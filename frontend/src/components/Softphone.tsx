@@ -2,11 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
-import { createLead } from '../lib/ops'
-import { formatDateTime, formatPhone } from '../lib/patients'
+import { useAuth } from '../lib/auth-context'
+import { createLead, fillScript, getScripts, leadPatient } from '../lib/ops'
+import { formatDateTime, formatPhone, getPatient } from '../lib/patients'
 import { useSoftphone, type PhoneStatus } from '../lib/softphone-context'
 import { formatDuration, lookupCaller } from '../lib/telephony'
-import { Button, Input } from './ui'
+import BookingDialog from './BookingDialog'
+import { ScriptBody } from './ScriptView'
+import { Button, ErrorText, Input, Select } from './ui'
 
 const DOT: Record<PhoneStatus, string> = {
   disabled: 'bg-slate-300',
@@ -156,6 +159,79 @@ function Caller({ number }: { number: string }) {
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#']
 
+/** During the call: any script at hand (objections, price, medical questions) and booking. */
+function CallAssistant({ number }: { number: string }) {
+  const { t, i18n } = useTranslation()
+  const { user } = useAuth()
+  const [code, setCode] = useState('')
+  const [booking, setBooking] = useState<string | null>(null)
+  const lang = i18n.language === 'ru' ? 'ru' : 'uz'
+  const { data: scripts = [] } = useQuery({
+    queryKey: ['scripts'],
+    queryFn: () => getScripts(),
+    staleTime: 600_000,
+  })
+  const { data: caller } = useQuery({
+    queryKey: ['telephony', 'lookup', number],
+    queryFn: () => lookupCaller(number),
+    enabled: number.replace(/\D/g, '').length >= 9,
+  })
+  const patient = useQuery({
+    queryKey: ['patient', booking],
+    queryFn: () => getPatient(booking!),
+    enabled: Boolean(booking),
+  })
+  const book = useMutation({
+    mutationFn: async () => {
+      if (caller?.patient) return caller.patient.id
+      const lead = caller?.lead ?? (await createLead({ phone: number, channel: 'call' }))
+      return (await leadPatient(lead.id)).patient_id
+    },
+    onSuccess: setBooking,
+  })
+  const script = scripts.find((s) => s.code === code && s.language === lang)
+  return (
+    <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+      <div className="flex gap-2">
+        <Select
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          className="min-w-0 flex-1 py-1 text-xs"
+        >
+          <option value="">{t('phone.scripts')}</option>
+          {scripts
+            .filter((s) => s.language === lang)
+            .map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.title}
+              </option>
+            ))}
+        </Select>
+        <Button
+          variant="secondary"
+          className="px-2 py-1 text-xs"
+          disabled={book.isPending}
+          onClick={() => book.mutate()}
+        >
+          {t('tasks.book')}
+        </Button>
+      </div>
+      {script && (
+        <div className="max-h-56 overflow-y-auto rounded-md bg-slate-50 p-2">
+          <ScriptBody
+            body={fillScript(script.body, {
+              Ism: user?.full_name.split(' ')[0],
+              Bemor: caller?.patient?.full_name,
+            })}
+          />
+        </div>
+      )}
+      <ErrorText error={book.error} />
+      {booking && patient.data && <BookingDialog patient={patient.data} onClose={() => setBooking(null)} />}
+    </div>
+  )
+}
+
 /** Floating card for the ringing / ongoing call. */
 export function CallPanel() {
   const { t } = useTranslation()
@@ -196,6 +272,7 @@ export function CallPanel() {
       <div className="mt-2">
         <Caller number={call.number} />
       </div>
+      {call.state === 'active' && <CallAssistant number={call.number} />}
       {keypad && call.state === 'active' && (
         <div className="mt-3 grid grid-cols-3 gap-1">
           {KEYS.map((k) => (

@@ -80,9 +80,12 @@ Kod tayyor va soxta provayderlar bilan test qilingan; jonli ishga tushirish uchu
 
 ## 6-bosqich. Rivojlantirish
 
-- Suhbat davomida operatorga jonli maslahatchi (real vaqtdagi STT).
-- Kampaniyalar UI'ni kengaytirish va A/B skriptlar.
-- Kassa va to'lovlar (agar klinika xohlasa).
+- 🟡 Suhbat davomida operatorga maslahatchi: qo'ng'iroq oynasida istalgan skript / e'tirozga javob
+  va shu yerning o'zidan qabulga yozish ✅. Real vaqtdagi STT bilan avtomatik maslahat — dizayn
+  `docs/07_AI.md` da, haqiqiy qo'ng'iroqlar va 4.1 benchmarkidan keyin.
+- ✅ Kampaniyalarda A/B skriptlar: auditoriya bemor bo'yicha teng bo'linadi, har variantning
+  gaplashish va yozilish foizi ko'rsatiladi.
+- Kassa va to'lovlar — klinika so'rasa (hozircha rejada yo'q).
 
 ---
 

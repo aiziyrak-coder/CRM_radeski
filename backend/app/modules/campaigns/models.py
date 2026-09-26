@@ -27,6 +27,8 @@ class Campaign(UUIDPk, Timestamps, Base):
     #  "last_visit_before_days": 180, "gender": "female", "age_min": 18, "age_max": 60}
     segment: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     script_code: Mapped[str | None] = mapped_column(String(30))
+    # A/B test: half of the audience (split by patient id) is called with this script instead
+    script_code_b: Mapped[str | None] = mapped_column(String(30))
     daily_limit: Mapped[int] = mapped_column(Integer, default=30)
     status: Mapped[CampaignStatus] = mapped_column(
         str_enum(CampaignStatus, 10), default=CampaignStatus.DRAFT, index=True

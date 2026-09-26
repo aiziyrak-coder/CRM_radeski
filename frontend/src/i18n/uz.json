@@ -597,7 +597,10 @@
       "finished": "Yakunlangan"
     },
     "hint": "Bitta operator asosiy ishidan tashqari kuniga ~30–50 ta qo'ng'iroq qila oladi. Qo'ng'iroq qilinmasin belgili bemorlar avtomatik chiqariladi.",
-    "any": "Hammasi"
+    "any": "Hammasi",
+    "scriptB": "B skript (A/B sinov)",
+    "noAb": "— sinovsiz —",
+    "abLine": "{{tasks}} vazifa, {{reached}} gaplashildi, {{booked}} yozildi ({{rate}})"
   },
   "reports": {
     "title": "Hisobotlar",
@@ -719,7 +722,8 @@
       "Address Incomplete": "raqam to'liq emas",
       "Authentication Error": "kirish xatosi"
     },
-    "dismiss": "Yopish"
+    "dismiss": "Yopish",
+    "scripts": "Skript yoki e'tirozga javob…"
   },
   "calls": {
     "title": "Qo'ng'iroqlar jurnali",

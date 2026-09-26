@@ -61,9 +61,17 @@ function NewCampaign({ onClose }: { onClose: () => void }) {
   const [segment, setSegment] = useState<Segment>({ kinds: ['legacy'] })
   const [limit, setLimit] = useState(30)
   const [script, setScript] = useState('reactivation')
+  const [scriptB, setScriptB] = useState('')
   const preview = useMutation({ mutationFn: () => previewSegment(segment) })
   const create = useMutation({
-    mutationFn: () => createCampaign({ name, segment, script_code: script, daily_limit: limit }),
+    mutationFn: () =>
+      createCampaign({
+        name,
+        segment,
+        script_code: script,
+        script_code_b: scriptB || null,
+        daily_limit: limit,
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['campaigns'] })
       onClose()
@@ -155,6 +163,20 @@ function NewCampaign({ onClose }: { onClose: () => void }) {
               ))}
             </Select>
           </Field>
+          <Field label={t('campaigns.scriptB')}>
+            <Select value={scriptB} onChange={(e) => setScriptB(e.target.value)}>
+              <option value="">{t('campaigns.noAb')}</option>
+              {[...new Set(scripts.map((s) => s.code))]
+                .filter((code) => code !== script)
+                .map((code) => (
+                  <option key={code} value={code}>
+                    {scripts.find(
+                      (s) => s.code === code && s.language === (i18n.language === 'ru' ? 'ru' : 'uz'),
+                    )?.title ?? code}
+                  </option>
+                ))}
+            </Select>
+          </Field>
           <Field label={t('campaigns.dailyLimit')}>
             <Input
               type="number"
@@ -212,6 +234,21 @@ function CampaignRow({ c }: { c: Campaign }) {
         {results.length > 0 && (
           <div className="text-slate-600">
             {results.map(([k, n]) => `${t(`outcomes.${k}`, { defaultValue: k })}: ${n}`).join(' · ')}
+          </div>
+        )}
+        {c.ab && (
+          <div className="mt-1 space-y-0.5">
+            {c.ab.map((v) => (
+              <div key={v.variant} className="tabular-nums">
+                <b>{v.variant.toUpperCase()}</b> ({v.script_code}):{' '}
+                {t('campaigns.abLine', {
+                  tasks: v.tasks,
+                  reached: v.reached,
+                  booked: v.booked,
+                  rate: v.booking_rate === null ? '—' : `${v.booking_rate}%`,
+                })}
+              </div>
+            ))}
           </div>
         )}
       </td>

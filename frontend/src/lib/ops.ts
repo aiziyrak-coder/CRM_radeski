@@ -215,12 +215,24 @@ export type Campaign = {
   name: string
   segment: Segment
   script_code: string | null
+  script_code_b: string | null
   daily_limit: number
   status: 'draft' | 'active' | 'paused' | 'finished'
   ends_on: string | null
   created_at: string
   audience: number
   stats: Record<string, number>
+  ab:
+    | {
+        variant: 'a' | 'b'
+        script_code: string
+        tasks: number
+        done: number
+        reached: number
+        booked: number
+        booking_rate: number | null
+      }[]
+    | null
 }
 export const getCampaigns = () => api<Campaign[]>('/campaigns')
 export const previewSegment = (segment: Segment) =>
@@ -229,6 +241,7 @@ export const createCampaign = (body: {
   name: string
   segment: Segment
   script_code?: string | null
+  script_code_b?: string | null
   daily_limit: number
 }) => api<Campaign>('/campaigns', { method: 'POST', body })
 export const setCampaignStatus = (id: string, status: Campaign['status']) =>

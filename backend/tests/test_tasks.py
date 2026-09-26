@@ -323,6 +323,49 @@ async def test_campaign_respects_segment_limit_and_dnc(client: AsyncClient) -> N
     assert (await client.get("/api/campaigns", headers=op_headers)).status_code == 403
 
 
+async def test_campaign_ab_scripts(client: AsyncClient) -> None:
+    await make_user("sup1", Role.SUPERVISOR)
+    sup = bearer(await login(client, "sup1"))
+    async with SessionLocal() as s:
+        for i in range(20):
+            s.add(
+                Patient(
+                    full_name=f"AB {i}", search_key=search_key(f"AB {i}"), kind=PatientKind.LEGACY,
+                    tags=[], district="Rishton",
+                    phones=[PatientPhone(number=f"+9989000020{i:02d}", is_primary=True)],
+                )
+            )  # fmt: skip
+        await s.commit()
+    body = {
+        "name": "A/B", "segment": {"districts": ["Rishton"]}, "daily_limit": 20,
+        "script_code": "reactivation", "script_code_b": "repeat_visit",
+    }  # fmt: skip
+    created = (await client.post("/api/campaigns", json=body, headers=sup)).json()
+    await client.post(
+        f"/api/campaigns/{created['id']}/status", json={"status": "active"}, headers=sup
+    )
+    tasks = await open_tasks(TaskType.CAMPAIGN)
+    scripts = {t.script_code for t in tasks}
+    assert scripts == {"reactivation", "repeat_visit"}  # both variants in use
+    # the split is by patient: a patient always lands in the same variant
+    for t in tasks:
+        assert t.script_code == ("repeat_visit" if t.patient_id.int % 2 else "reactivation")
+
+    await make_user("op1", Role.OPERATOR)
+    op = bearer(await login(client, "op1"))
+    a_task = next(t for t in tasks if t.script_code == "reactivation")
+    b_task = next(t for t in tasks if t.script_code == "repeat_visit")
+    await client.post(f"/api/tasks/{a_task.id}/result", json={"outcome": "booked"}, headers=op)
+    await client.post(
+        f"/api/tasks/{b_task.id}/result", json={"outcome": "refused", "reason": "price"}, headers=op
+    )
+    [campaign] = (await client.get("/api/campaigns", headers=sup)).json()
+    ab = {v["variant"]: v for v in campaign["ab"]}
+    assert ab["a"]["booked"] == 1 and ab["a"]["booking_rate"] == 100.0
+    assert ab["b"]["reached"] == 1 and ab["b"]["booking_rate"] == 0.0
+    assert ab["a"]["tasks"] + ab["b"]["tasks"] == 20
+
+
 # --- site webhook -----------------------------------------------------------------------------
 
 

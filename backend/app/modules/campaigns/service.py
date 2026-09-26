@@ -1,5 +1,6 @@
 """Campaign segments and the daily task generator (TZ 4.9)."""
 
+import uuid
 from datetime import date, timedelta
 from typing import Any
 
@@ -11,7 +12,7 @@ from app.modules.campaigns.models import Campaign, CampaignStatus
 from app.modules.patients.models import Patient, PatientCondition
 from app.modules.scheduling.models import ACTIVE_STATUSES, Appointment
 from app.modules.tasks import service as tasks
-from app.modules.tasks.models import Task, TaskStatus, TaskType
+from app.modules.tasks.models import REACHED, Outcome, Task, TaskStatus, TaskType
 
 
 def segment_query(segment: dict[str, Any]) -> Select:
@@ -86,9 +87,43 @@ async def generate_for_campaign(session: AsyncSession, campaign: Campaign) -> in
     for pid in list(await session.scalars(stmt)):
         created += await tasks.create_task(
             session, TaskType.CAMPAIGN, due_at=now, patient_id=pid, campaign_id=campaign.id,
-            script_code=campaign.script_code, dedupe_key=f"camp:{campaign.id}:{pid}",
+            script_code=script_for(campaign, pid), dedupe_key=f"camp:{campaign.id}:{pid}",
         )  # fmt: skip
     return created
+
+
+def script_for(campaign: Campaign, patient_id: uuid.UUID) -> str | None:
+    """A/B split by patient id: stable (a patient always gets the same variant), ~50/50."""
+    if campaign.script_code_b and patient_id.int % 2:
+        return campaign.script_code_b
+    return campaign.script_code
+
+
+async def ab_stats(session: AsyncSession, campaign: Campaign) -> list[dict[str, Any]] | None:
+    """Per-variant results: which script books more patients (TZ 6: A/B scripts)."""
+    if not campaign.script_code_b:
+        return None
+    rows = await session.execute(
+        select(Task.script_code, Task.status, Task.outcome, func.count())
+        .where(Task.campaign_id == campaign.id)
+        .group_by(Task.script_code, Task.status, Task.outcome)
+    )
+    by: dict[str | None, dict[str, int]] = {}
+    for code, status, outcome, n in rows:
+        v = by.setdefault(code, {"tasks": 0, "done": 0, "reached": 0, "booked": 0})
+        v["tasks"] += n
+        if status is not TaskStatus.OPEN:
+            v["done"] += n
+        if outcome in REACHED:
+            v["reached"] += n
+        if outcome is Outcome.BOOKED:
+            v["booked"] += n
+    out = []
+    for variant, code in (("a", campaign.script_code), ("b", campaign.script_code_b)):
+        v = by.get(code, {"tasks": 0, "done": 0, "reached": 0, "booked": 0})
+        rate = round(100 * v["booked"] / v["reached"], 1) if v["reached"] else None
+        out.append({"variant": variant, "script_code": code, **v, "booking_rate": rate})
+    return out
 
 
 async def generate_all(session: AsyncSession) -> int:
