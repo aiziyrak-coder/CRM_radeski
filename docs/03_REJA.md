@@ -15,7 +15,7 @@ Claude Code bilan ishlash tartibi: bitta sessiyada bitta vazifa (masalan, "0.3 �
 | 0.3 ✅ | Bemorlar moduli: model, CRUD, telefonni normallashtirish, translit qidiruv, dublikatlarni aniqlash | "Абдуллаев" ham, "abdullayev" ham topiladi. Takroriy raqam kiritilsa ogohlantirish chiqadi |
 | 0.4 ✅ | **Import skripti**: asosiy fayl, 7 ta tuman fayli, psoriaz/vitiligo fayli, `nomer.xlsx`. F.I.Sh. katagini ajratish, xatolar hisoboti | ~6 700 bemor va ~47 500 sovuq raqam import qilinadi. Xato qatorlar alohida CSV'ga chiqadi. Qayta ishga tushirilsa dublikat yaratilmaydi |
 | 0.5 ✅ | **Tashxislarni normallashtirish**: ~1 700 xil yozuv → qoidalar (kalit so'z + MKB) toifa taklif qiladi (98% qamrov) → "Tashxislar" sahifasida shifokor tasdiqlaydi → bemorlarga qo'llanadi | Shifokor jadvalni ko'rib tasdiqlaydi. Bemorlar toifa bo'yicha filtrlanadi |
-| 0.5b | Qoidalar tanimagan ~160 matn uchun OpenAI taklifi (kalit berilgach) | Qolgan matnlarga AI toifa taklif qiladi, shifokor tasdiqlaydi |
+| 0.5b ✅ | Qoidalar tanimagan ~160 matn uchun OpenAI taklifi (kalit berilgach: "AI taklifi" tugmasi yoki `python -m app.cli ai-diagnoses`) | Qolgan matnlarga AI toifa taklif qiladi, shifokor tasdiqlaydi |
 | 0.6 ✅ | Katalogni radeski.uz'dan sinxronlash (filiallar, shifokorlar, yo'nalishlar, 806 narx) va qo'shimcha maydonlar formasi | Tungi sinxronizatsiya ishlaydi. Davomiylik va resurs qo'lda to'ldiriladi |
 
 **Natija**: tozalangan va segmentlangan baza. Buni klinikaga darhol ko'rsatish mumkin, masalan: "trixologga tegishli alopesiyali 850 bemor".
@@ -58,12 +58,14 @@ Claude Code bilan ishlash tartibi: bitta sessiyada bitta vazifa (masalan, "0.3 �
 
 | # | Vazifa | Qabul mezoni |
 |---|---|---|
-| 4.1 | **STT benchmark**: 30 ta haqiqiy qo'ng'iroq, etalon transkript, OpenAI transkripsiya modellari (sifat yetmasa, o'zbek tiliga ixtisoslashgan zaxira provayder) | WER va narx jadvali. Model tanlanadi |
-| 4.2 | STT adapteri va transkripsiya vazifasi | Qo'ng'iroq tugaganidan 5 daqiqa ichida transkript tayyor |
-| 4.3 | Tahlil prompti, JSON sxema, `call_analyses`, QA mezonlarini sozlash | 30 ta qo'ng'iroqda natija va buzilishlar rahbar bahosiga ≥ 85% mos keladi |
-| 4.4 | Operator UI: xulosani tasdiqlash yoki tuzatish, natijani avtomatik to'ldirish | Operator natijani 1 tugma bilan tasdiqlaydi |
-| 4.5 | QA paneli va qizil bayroq bildirishnomalari | Rahbar buzilishni ko'radi va yozuvning o'sha joyini tinglaydi |
-| 4.6 | Qo'ng'iroqdan oldin bemor haqida qisqa ma'lumot, haftalik AI dayjest | — |
+| 4.1 🟡 | **STT benchmark**: 30 ta haqiqiy qo'ng'iroq, etalon transkript, OpenAI transkripsiya modellari (sifat yetmasa, o'zbek tiliga ixtisoslashgan zaxira provayder) | WER va narx jadvali. Model tanlanadi |
+| 4.2 ✅ | STT adapteri va transkripsiya vazifasi | Qo'ng'iroq tugaganidan 5 daqiqa ichida transkript tayyor |
+| 4.3 ✅ | Tahlil prompti, JSON sxema, `call_analyses`, QA mezonlarini sozlash | 30 ta qo'ng'iroqda natija va buzilishlar rahbar bahosiga ≥ 85% mos keladi |
+| 4.4 ✅ | Operator UI: xulosani tasdiqlash yoki tuzatish, natijani avtomatik to'ldirish | Operator natijani 1 tugma bilan tasdiqlaydi |
+| 4.5 ✅ | QA paneli va qizil bayroq bildirishnomalari | Rahbar buzilishni ko'radi va yozuvning o'sha joyini tinglaydi |
+| 4.6 ✅ | Qo'ng'iroqdan oldin bemor haqida qisqa ma'lumot, haftalik AI dayjest | — |
+
+🟡 4.1: benchmark vositasi tayyor (`python -m app.cli stt-benchmark`), haqiqiy 30 ta qo'ng'iroq va OPENAI_API_KEY kerak. 4.2–4.6 soxta STT/LLM bilan to'liq test qilingan; kalit qo'shilgach jonli ishlaydi. 4.3 dagi "≥ 85% mos" mezoni haqiqiy qo'ng'iroqlarda rahbar bahosi bilan solishtirib tekshiriladi — `docs/07_AI.md`.
 
 ## 5-bosqich. Kanallar va eslatmalar (~2 hafta, Meta tekshiruviga bog'liq)
 

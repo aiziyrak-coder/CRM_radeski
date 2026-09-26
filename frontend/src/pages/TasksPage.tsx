@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import BookingDialog from '../components/BookingDialog'
 import PatientName from '../components/PatientName'
+import CallAnalysisDialog from '../components/CallAnalysisDialog'
 import { CallButton } from '../components/Softphone'
+import { getBrief } from '../lib/ai'
 import ScriptButton from '../components/ScriptView'
 import { Badge, Button, Card, ErrorText, Field, Input, Select } from '../components/ui'
 import { useAuth } from '../lib/auth-context'
@@ -39,11 +41,23 @@ const TYPES: TaskType[] = [
   'campaign',
 ]
 
+/** What the AI heard, as a starting point for the result form (the operator decides). */
+function suggested(task: Task) {
+  const ai = task.ai_suggestion
+  const allowed = OUTCOMES_FOR[task.type]
+  return {
+    outcome: ai?.outcome && allowed.includes(ai.outcome) ? ai.outcome : allowed[0],
+    reason: ai?.reason ?? '',
+    note: ai ? [ai.summary, ai.next_step].filter(Boolean).join(' ') : '',
+  }
+}
+
 function ResultForm({ task, onDone }: { task: Task; onDone: () => void }) {
   const { t } = useTranslation()
-  const [outcome, setOutcome] = useState<Outcome>(OUTCOMES_FOR[task.type][0])
-  const [reason, setReason] = useState('')
-  const [note, setNote] = useState('')
+  const initial = suggested(task)
+  const [outcome, setOutcome] = useState<Outcome>(initial.outcome)
+  const [reason, setReason] = useState(initial.reason)
+  const [note, setNote] = useState(initial.note)
   const [callbackAt, setCallbackAt] = useState('')
   const save = useMutation({
     mutationFn: () =>
@@ -52,6 +66,7 @@ function ResultForm({ task, onDone }: { task: Task; onDone: () => void }) {
         reason: reason || null,
         note: note.trim() || null,
         callback_at: callbackAt ? `${callbackAt}:00+05:00` : null,
+        analysis_id: task.ai_suggestion?.analysis_id ?? null,
       }),
     onSuccess: onDone,
   })
@@ -101,6 +116,78 @@ function ResultForm({ task, onDone }: { task: Task; onDone: () => void }) {
         </Button>
         <ErrorText error={save.error} />
       </div>
+    </div>
+  )
+}
+
+function Brief({ patientId }: { patientId: string }) {
+  const { t, i18n } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const lang = i18n.language === 'ru' ? 'ru' : 'uz'
+  const { data, error, isFetching } = useQuery({
+    queryKey: ['ai', 'brief', patientId, lang],
+    queryFn: () => getBrief(patientId, lang),
+    enabled: open,
+    staleTime: 600_000,
+  })
+  return (
+    <div className="mt-1">
+      <button className="text-xs text-teal-800 hover:underline" onClick={() => setOpen(!open)}>
+        {t(open ? 'ai.hideBrief' : 'ai.brief')}
+      </button>
+      {open && (
+        <div className="mt-1 rounded-md bg-slate-50 p-2 text-sm whitespace-pre-line text-slate-700">
+          {isFetching && !data ? t('app.loading') : data?.text}
+          <ErrorText error={error} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Plan 4.4: the AI filled in the result from the recording; one click confirms it. */
+function AiSuggestionBox({ task, onEdit, onDone }: { task: Task; onEdit: () => void; onDone: () => void }) {
+  const { t } = useTranslation()
+  const [details, setDetails] = useState(false)
+  const s = task.ai_suggestion!
+  const initial = suggested(task)
+  const confirm = useMutation({
+    mutationFn: () =>
+      recordResult(task.id, {
+        outcome: initial.outcome,
+        reason: initial.reason || null,
+        note: initial.note || null,
+        analysis_id: s.analysis_id,
+      }),
+    onSuccess: onDone,
+  })
+  const needsInput = NEEDS_REASON.includes(initial.outcome) && !initial.reason
+  const canConfirm =
+    s.outcome !== null && initial.outcome === s.outcome && initial.outcome !== 'callback' && !needsInput
+  return (
+    <div className="mt-3 rounded-md border border-violet-200 bg-violet-50 p-3 text-sm">
+      <div className="text-xs font-medium text-violet-800">{t('ai.suggestion')}</div>
+      <p className="mt-1 text-slate-800">{s.summary}</p>
+      <div className="mt-1 text-xs text-slate-600">
+        {s.outcome ? t(`outcomes.${s.outcome}`) : t('ai.noOutcome')}
+        {s.reason && ` · ${t(`reasons.${s.reason}`, { defaultValue: s.reason })}`}
+        {s.next_step && ` · ${s.next_step}`}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {canConfirm && (
+          <Button className="px-2 py-1 text-xs" disabled={confirm.isPending} onClick={() => confirm.mutate()}>
+            {t('ai.confirm')}
+          </Button>
+        )}
+        <Button variant="secondary" className="px-2 py-1 text-xs" onClick={onEdit}>
+          {t('ai.edit')}
+        </Button>
+        <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => setDetails(true)}>
+          {t('ai.open')}
+        </Button>
+        <ErrorText error={confirm.error} />
+      </div>
+      {details && <CallAnalysisDialog callId={s.call_id} onClose={() => setDetails(false)} />}
     </div>
   )
 }
@@ -169,6 +256,7 @@ function TaskCard({ task }: { task: Task }) {
             {task.patient_language && ` · ${task.patient_language.toUpperCase()}`}
           </div>
           {task.note && <div className="mt-1 text-sm whitespace-pre-line text-slate-700">{task.note}</div>}
+          {task.patient_id && <Brief patientId={task.patient_id} />}
         </div>
         <div className="flex flex-wrap gap-1">
           <CallButton number={task.patient_phone} taskId={task.id} />
@@ -183,6 +271,9 @@ function TaskCard({ task }: { task: Task }) {
           </Button>
         </div>
       </div>
+      {task.ai_suggestion && !open && (
+        <AiSuggestionBox task={task} onEdit={() => setOpen(true)} onDone={refresh} />
+      )}
       {open && (
         <div className="mt-3">
           <ResultForm task={task} onDone={refresh} />

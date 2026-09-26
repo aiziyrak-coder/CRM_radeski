@@ -1,4 +1,5 @@
 # Import every module's models so SQLAlchemy metadata (and Alembic autogenerate) sees them.
+from app.modules.ai import models as ai_models  # noqa: F401
 from app.modules.audit import models as audit_models  # noqa: F401
 from app.modules.campaigns import models as campaigns_models  # noqa: F401
 from app.modules.catalog import models as catalog_models  # noqa: F401

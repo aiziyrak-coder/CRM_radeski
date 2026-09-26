@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 
 from app.core import clinic_time
 from app.core.deps import SessionDep, client_ip, require_roles
+from app.modules.ai import service as ai
 from app.modules.audit import service as audit
 from app.modules.leads.models import Lead
 from app.modules.patients.models import Patient
@@ -27,6 +28,15 @@ from app.modules.users.models import Role, User
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 CALL_CENTER = (Role.OPERATOR, Role.SUPERVISOR, Role.ADMIN)
 Agent = Annotated[User, Depends(require_roles(*CALL_CENTER))]
+
+
+class AiSuggestion(BaseModel):
+    analysis_id: uuid.UUID
+    call_id: uuid.UUID
+    outcome: str | None
+    reason: str | None
+    summary: str | None
+    next_step: str | None
 
 
 class TaskOut(BaseModel):
@@ -53,6 +63,7 @@ class TaskOut(BaseModel):
     appointment_at: datetime | None
     campaign_id: uuid.UUID | None
     created_at: datetime
+    ai_suggestion: AiSuggestion | None = None
 
 
 class ResultIn(BaseModel):
@@ -60,6 +71,8 @@ class ResultIn(BaseModel):
     reason: str | None = Field(default=None, max_length=50)
     note: str | None = Field(default=None, max_length=2000)
     callback_at: datetime | None = None
+    # the AI analysis the operator confirmed or corrected with this result (plan 4.4)
+    analysis_id: uuid.UUID | None = None
 
 
 class ManualTaskIn(BaseModel):
@@ -105,6 +118,7 @@ async def serialize(session: SessionDep, rows: list[Task]) -> list[TaskOut]:
             )
         )
     }
+    suggestions = await ai.suggestions_for_tasks(session, [t.id for t in rows])
     now = clinic_time.now()
     out = []
     for t in rows:
@@ -127,7 +141,7 @@ async def serialize(session: SessionDep, rows: list[Task]) -> list[TaskOut]:
                 do_not_call=bool(p and p.do_not_call), lead_id=t.lead_id,
                 lead_channel=lead.channel.value if lead else None, appointment_id=t.appointment_id,
                 appointment_at=appt.starts_at if appt else None, campaign_id=t.campaign_id,
-                created_at=t.created_at,
+                created_at=t.created_at, ai_suggestion=suggestions.get(t.id),
             )
         )  # fmt: skip
     return out
@@ -203,7 +217,7 @@ async def record_result(
     try:
         await service.record_result(
             session, task, user_id=user.id, outcome=body.outcome, reason=body.reason,
-            note=body.note, callback_at=body.callback_at,
+            note=body.note, callback_at=body.callback_at, analysis_id=body.analysis_id,
         )  # fmt: skip
     except service.TaskError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=exc.code) from None

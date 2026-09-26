@@ -10,6 +10,7 @@ import SoonPage from './pages/SoonPage'
 // pages load on demand: the first screen doesn't pay for every module
 const AuditPage = lazy(() => import('./pages/AuditPage'))
 const CallsPage = lazy(() => import('./pages/CallsPage'))
+const QaPage = lazy(() => import('./pages/QaPage'))
 const CampaignsPage = lazy(() => import('./pages/CampaignsPage'))
 const LeadsPage = lazy(() => import('./pages/LeadsPage'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
@@ -38,6 +39,7 @@ const PAGES: Record<string, ReactNode> = {
   '/campaigns': <CampaignsPage />,
   '/reports': <ReportsPage />,
   '/calls': <CallsPage />,
+  '/qa': <QaPage />,
 }
 
 // detail pages inherit the roles of their menu section

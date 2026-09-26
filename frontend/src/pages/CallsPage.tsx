@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
+import CallAnalysisDialog, { ScoreBadge } from '../components/CallAnalysisDialog'
 import PatientName from '../components/PatientName'
 import RecordingPlayer from '../components/RecordingPlayer'
 import { CallButton } from '../components/Softphone'
@@ -33,6 +34,7 @@ export default function CallsPage() {
     refetchInterval: 15_000,
   })
   const canListenAll = ['supervisor', 'admin', 'owner'].includes(user?.role ?? '')
+  const [analysis, setAnalysis] = useState<string | null>(null)
   const answered = calls?.filter((c) => c.status === 'answered').length ?? 0
   const missed = calls?.filter((c) => ['missed', 'abandoned', 'after_hours'].includes(c.status)).length ?? 0
 
@@ -94,6 +96,7 @@ export default function CallsPage() {
                   <th className="pb-2 pl-3 text-right">{t('calls.wait')}</th>
                   <th className="pr-3 pb-2 pl-3 text-right">{t('calls.talk')}</th>
                   <th className="pb-2">{t('calls.status')}</th>
+                  <th className="pb-2">AI</th>
                   <th />
                 </tr>
               </thead>
@@ -128,6 +131,20 @@ export default function CallsPage() {
                         <div className="text-xs text-amber-700">{t('calls.callbackRequested')}</div>
                       )}
                     </td>
+                    <td className="py-2 pr-3 whitespace-nowrap">
+                      {c.ai_status === 'ready' && (canListenAll || c.user_id === user?.id) ? (
+                        <button
+                          onClick={() => setAnalysis(c.id)}
+                          className="flex items-center gap-1"
+                          title={t('ai.open')}
+                        >
+                          <ScoreBadge score={c.ai_score} />
+                          {c.ai_red_flags && <span className="text-red-600">⚑</span>}
+                        </button>
+                      ) : c.ai_status && c.ai_status !== 'ready' ? (
+                        <span className="text-xs text-slate-500">{t(`ai.status.${c.ai_status}`)}</span>
+                      ) : null}
+                    </td>
                     <td className="py-2 text-right whitespace-nowrap">
                       {c.recording_status === 'ready' && (canListenAll || c.user_id === user?.id) && (
                         <RecordingPlayer callId={c.id} />
@@ -146,6 +163,13 @@ export default function CallsPage() {
           </div>
         )}
       </Card>
+      {analysis && (
+        <CallAnalysisDialog
+          callId={analysis}
+          onClose={() => setAnalysis(null)}
+          canAck={user?.role === 'supervisor' || user?.role === 'admin'}
+        />
+      )}
     </div>
   )
 }

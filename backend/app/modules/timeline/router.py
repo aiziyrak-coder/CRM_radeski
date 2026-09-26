@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import CurrentUser, SessionDep
+from app.modules.ai.models import AnalysisStatus, CallAnalysis
 from app.modules.catalog.models import Doctor, Service
 from app.modules.leads.models import Lead
 from app.modules.patients.models import Patient, PatientKind
@@ -179,19 +180,24 @@ async def timeline(
             )
 
         phone_calls = await session.execute(
-            select(Call, User.full_name)
+            select(Call, User.full_name, CallAnalysis.summary)
             .outerjoin(User, User.id == Call.user_id)
+            .outerjoin(
+                CallAnalysis,
+                (CallAnalysis.call_id == Call.id) & (CallAnalysis.status == AnalysisStatus.READY),
+            )
             .where(Call.patient_id == patient_id)
             .order_by(Call.started_at.desc())
             .limit(PER_SOURCE)
         )
-        for call, user_name in phone_calls:
+        for call, user_name, summary in phone_calls:
             events.append(
                 Event(
                     kind="phone",
                     at=call.started_at,
                     status=call.status.value,
                     title=call.direction.value,
+                    detail=summary,  # the AI summary of the conversation
                     user=user_name,
                     ref=call.id if call.recording_status is RecordingStatus.READY else None,
                     seconds=call.talk_seconds,

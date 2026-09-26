@@ -52,6 +52,9 @@ export interface CallRecord {
   talk_seconds: number | null
   callback_requested: boolean
   recording_status: 'pending' | 'ready' | 'missing' | 'failed' | null
+  ai_status: string | null
+  ai_score: number | null
+  ai_red_flags: boolean
 }
 
 export const getSoftphone = () => api<SoftphoneCredentials>('/telephony/me')

@@ -115,6 +115,7 @@ async def record_result(
     reason: str | None = None,
     note: str | None = None,
     callback_at: datetime | None = None,
+    analysis_id: uuid.UUID | None = None,
 ) -> Task:
     """Stores an attempt and moves the task on: retry, reschedule a callback, or close it."""
     if task.status is not TaskStatus.OPEN:
@@ -183,7 +184,10 @@ async def record_result(
             )
 
     await session.flush()
-    await emit(session, "task.result", task=task, outcome=outcome, reason=reason, user_id=user_id)
+    await emit(
+        session, "task.result", task=task, outcome=outcome, reason=reason, user_id=user_id,
+        analysis_id=analysis_id,
+    )  # fmt: skip
     return task
 
 

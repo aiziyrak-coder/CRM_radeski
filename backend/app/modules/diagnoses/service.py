@@ -2,6 +2,7 @@ import uuid
 from collections import Counter
 from datetime import UTC, datetime
 
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -145,3 +146,73 @@ async def category_stats(session: AsyncSession) -> dict[str, dict[str, int]]:
     for code, n in waiting:
         stats.setdefault(code, {"patients": 0, "suggested_texts": 0})["suggested_texts"] = n
     return stats
+
+
+# --- AI suggestions for texts no rule recognised (plan 0.5b) ----------------------------------
+
+AI_BATCH = 40
+
+
+class _AiItem(BaseModel):
+    n: int = Field(description="the number of the text in the list")
+    category: str | None = Field(description="category code, or null if none fits")
+
+
+class _AiBatch(BaseModel):
+    items: list[_AiItem]
+
+
+def _ai_system() -> str:
+    lines = [
+        "You map free-text diagnoses written by doctors of a dermatology / trichology / "
+        "cosmetology clinic in Uzbekistan (Russian, Uzbek, abbreviations, typos, ICD-10 codes) "
+        "to one of the clinic's categories. Answer with the category code for every numbered "
+        "text; use null when no category fits or the text is not a diagnosis. Never guess "
+        "wildly: a doctor approves every answer.",
+        "",
+        "Categories:",
+    ]
+    lines += [f"- {c.code}: {c.name_ru} / {c.name_uz}" for c in CATEGORY_BY_CODE.values()]
+    return "\n".join(lines)
+
+
+async def suggest_with_ai(session: AsyncSession, limit: int = 400) -> Counter[str]:
+    """Pending mappings get an AI category proposal (status SUGGESTED, method AI); nothing is
+    applied to patients until a doctor approves it."""
+    from app.integrations.llm import LlmError, get_llm
+
+    counts: Counter[str] = Counter()
+    pending = list(
+        await session.scalars(
+            select(DiagnosisMapping)
+            .where(DiagnosisMapping.status == MappingStatus.PENDING)
+            .order_by(DiagnosisMapping.text)
+            .limit(limit)
+        )
+    )
+    llm = get_llm()
+    system = _ai_system()
+    for start in range(0, len(pending), AI_BATCH):
+        chunk = pending[start : start + AI_BATCH]
+        try:
+            out = await llm.parse(
+                system=system,
+                user="\n".join(f"{i}. {m.text}" for i, m in enumerate(chunk, 1)),
+                schema=_AiBatch,
+                cache_key="diagnosis-categories-v1",
+            )
+        except LlmError:
+            counts["failed_batches"] += 1
+            continue
+        for item in out.items:
+            if not 1 <= item.n <= len(chunk):
+                continue
+            mapping = chunk[item.n - 1]
+            if item.category in CATEGORY_BY_CODE and mapping.status is MappingStatus.PENDING:
+                mapping.category_code = item.category
+                mapping.method = MappingMethod.AI
+                mapping.status = MappingStatus.SUGGESTED
+                counts["suggested"] += 1
+        counts["checked"] += len(chunk)
+    await session.flush()
+    return counts

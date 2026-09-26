@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from app.core import clinic_time
 from app.core.config import get_settings
 from app.core.deps import SessionDep, require_roles
+from app.modules.ai.models import CallAnalysis
 from app.modules.leads.models import OPEN_STAGES, Lead
 from app.modules.leads.service import find_patient_by_phone
 from app.modules.patients.models import Patient
@@ -177,6 +178,9 @@ class CallOut(BaseModel):
     talk_seconds: int | None
     callback_requested: bool
     recording_status: RecordingStatus | None
+    ai_status: str | None = None
+    ai_score: int | None = None
+    ai_red_flags: bool = False
 
 
 @router.get("/calls")
@@ -191,12 +195,16 @@ async def calls(
     limit: int = Query(default=200, le=500),
 ) -> list[CallOut]:
     stmt = (
-        select(Call, Patient.full_name, User.full_name)
+        select(
+            Call, Patient.full_name, User.full_name,
+            CallAnalysis.status, CallAnalysis.score, CallAnalysis.has_red_flags,
+        )
         .outerjoin(Patient, Patient.id == Call.patient_id)
         .outerjoin(User, User.id == Call.user_id)
+        .outerjoin(CallAnalysis, CallAnalysis.call_id == Call.id)
         .order_by(Call.started_at.desc())
         .limit(limit)
-    )
+    )  # fmt: skip
     if patient_id:
         stmt = stmt.where(Call.patient_id == patient_id)
     else:
@@ -213,8 +221,11 @@ async def calls(
             **{f: getattr(c, f) for f in CallOut.model_fields if hasattr(c, f)},
             patient_name=patient_name,
             user_name=user_name,
+            ai_status=ai_status.value if ai_status else None,
+            ai_score=ai_score,
+            ai_red_flags=bool(flags),
         )
-        for c, patient_name, user_name in await session.execute(stmt)
+        for c, patient_name, user_name, ai_status, ai_score, flags in await session.execute(stmt)
     ]
 
 

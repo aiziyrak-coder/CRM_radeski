@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import app.modules.ai.rules  # noqa: F401
 import app.modules.tasks.rules  # noqa: F401  - event handlers must be registered in workers too
 from app.core.db import SessionLocal
 from app.workers.celery_app import celery_app
@@ -98,6 +99,8 @@ def process_recording(call_id: str) -> str | None:
     from app.modules.telephony.service import process_recording as convert
 
     status = _run(lambda session: convert(session, uuid.UUID(call_id)))
+    if status and status.value == "ready":
+        analyze_call.delay(call_id)
     return status.value if status else None
 
 
@@ -106,3 +109,35 @@ def retry_recordings() -> int:
     from app.modules.telephony.service import retry_recordings as run
 
     return _run(run)
+
+
+@celery_app.task(name="jobs.analyze_call")
+def analyze_call(call_id: str) -> str | None:
+    """Transcript + QA analysis; a no-op while OPENAI_API_KEY is empty."""
+    import uuid
+
+    from app.modules.ai.service import analyze_call as run
+
+    status = _run(lambda session: run(session, uuid.UUID(call_id)))
+    return status.value if status else None
+
+
+@celery_app.task(name="jobs.retry_analyses")
+def retry_analyses() -> int:
+    """Every 30 min: failed/stuck analyses and the backlog once the API key is added."""
+    from app.integrations.openai_client import enabled
+    from app.modules.ai.service import pending_calls
+
+    if not enabled():
+        return 0
+    ids = _run(pending_calls)
+    for call_id in ids:
+        analyze_call.delay(str(call_id))
+    return len(ids)
+
+
+@celery_app.task(name="jobs.weekly_digest")
+def weekly_digest() -> str:
+    from app.modules.ai.qa import make_digest
+
+    return str(_run(lambda session: make_digest(session)).id)

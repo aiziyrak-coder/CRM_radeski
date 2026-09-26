@@ -163,6 +163,7 @@ function EventLine({ e }: { e: TimelineEvent }) {
           <Badge tone={e.status === 'answered' ? 'good' : 'neutral'}>{t(`calls.statuses.${e.status}`)}</Badge>
           {e.seconds ? <span className="text-slate-600"> · {formatDuration(e.seconds)}</span> : null}
           {e.user && <span className="text-xs text-slate-500"> · {e.user}</span>}
+          {e.detail && <div className="text-slate-600">{e.detail}</div>}
           {e.ref && (
             <div className="mt-1">
               <RecordingPlayer callId={e.ref} />

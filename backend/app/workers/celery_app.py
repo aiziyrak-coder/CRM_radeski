@@ -29,6 +29,11 @@ celery_app.conf.update(
         "catalog-0200": {"task": "jobs.sync_catalog", "schedule": crontab(hour=2, minute=0)},
         "diagnoses-0210": {"task": "jobs.sync_diagnoses", "schedule": crontab(hour=2, minute=10)},
         "recordings-retry": {"task": "jobs.retry_recordings", "schedule": crontab(minute="*/30")},
+        "analyses-retry": {"task": "jobs.retry_analyses", "schedule": crontab(minute="15,45")},
+        "digest-monday-0800": {
+            "task": "jobs.weekly_digest",
+            "schedule": crontab(hour=8, minute=0, day_of_week="mon"),
+        },
     },
 )
 

@@ -298,7 +298,9 @@
       "oncodermatologist": "Dermatoonkolog",
       "podologist": "Podolog"
     },
-    "legend": "Yashil raqam — toifasi tasdiqlangan bemorlar, sariq — tasdiqlashni kutayotgan takliflar. Toifani bossangiz, ro'yxat shu toifaga filtrlanadi."
+    "legend": "Yashil raqam — toifasi tasdiqlangan bemorlar, sariq — tasdiqlashni kutayotgan takliflar. Toifani bossangiz, ro'yxat shu toifaga filtrlanadi.",
+    "aiSuggest": "AI taklifi (toifasizlar uchun)",
+    "aiSuggested": "AI {{checked}} ta yozuvni ko'rdi, {{count}} tasiga toifa taklif qildi — tasdiqlashni kutmoqda"
   },
   "schedule": {
     "title": "Jadval",
@@ -736,5 +738,95 @@
       "busy": "Band",
       "failed": "Ulanmadi"
     }
+  },
+  "ai": {
+    "title": "Sifat nazorati (AI)",
+    "disabled": "AI hali ulanmagan: .env faylida OPENAI_API_KEY bo'sh. Qo'ng'iroqlar yozib olinadi va kalit qo'shilgach tahlil qilinadi (oxirgi 7 kun).",
+    "tabs": {
+      "overview": "Umumiy",
+      "calls": "Qo'ng'iroqlar",
+      "criteria": "Mezonlar",
+      "digest": "Haftalik dayjest"
+    },
+    "status": {
+      "pending": "Navbatda",
+      "transcribing": "Matnga o'girilmoqda",
+      "analyzing": "Tahlil qilinmoqda",
+      "ready": "Tayyor",
+      "failed": "Xato",
+      "skipped": "Tahlil qilinmadi (juda qisqa yoki nutq yo'q)"
+    },
+    "review": {
+      "confirmed": "Operator tasdiqladi",
+      "corrected": "Operator tuzatdi"
+    },
+    "analysisTitle": "Qo'ng'iroq tahlili",
+    "redFlags": "Qizil bayroqlar",
+    "markReviewed": "Ko'rib chiqildi",
+    "reviewed": "Ko'rib chiqilgan",
+    "flags": {
+      "diagnosis": "Tashxis/davolash maslahati",
+      "pressure": "Bosim yoki bahs",
+      "false_promise": "Asossiz va'da",
+      "complaint": "Shikoyat"
+    },
+    "criteriaTitle": "Mezonlar",
+    "criteria": {
+      "greeting": "Klinika va ismini aytib salomlashdi",
+      "patient_name": "Bemorning ismini so'radi",
+      "need": "Ehtiyojni aniqladi",
+      "two_slots": "Aniq 2 ta vaqt taklif qildi",
+      "next_step": "Keyingi qadamni taklif qildi",
+      "confirm": "Yozuvni takrorlab tasdiqladi",
+      "polite": "Xushmuomala va qisqa",
+      "closing": "Skript bo'yicha yakunladi"
+    },
+    "violations": "Buzilishlar",
+    "extracted": {
+      "interest": "Qiziqishi",
+      "preferred_time": "Qulay vaqti",
+      "source": "Qayerdan bildi",
+      "next_step": "Keyingi qadam"
+    },
+    "questions": "Bemor savollari",
+    "objections": "E'tirozlar",
+    "transcript": "Transkript",
+    "operator": "Operator",
+    "patient": "Bemor",
+    "analysed": "Tahlil qilingan",
+    "avgScore": "O'rtacha ball",
+    "redFlagsOpen": "Ko'rilmagan qizil bayroqlar",
+    "corrections": "Operator tuzatgan / tasdiqlangan",
+    "byOperator": "Operatorlar",
+    "calls": "Qo'ng'iroq",
+    "noData": "Bu davrda tahlil qilingan qo'ng'iroq yo'q",
+    "byCriterion": "Mezonlar bo'yicha bajarilish",
+    "order": {
+      "recent": "Eng yangilari",
+      "worst": "Eng past ball",
+      "best": "Eng yuqori ball"
+    },
+    "onlyFlagged": "Faqat qizil bayroqlilar",
+    "open": "Tahlilni ochish",
+    "weight": "Vazn",
+    "active": "Faol",
+    "criteriaHint": "Har bir qo'ng'iroq shu mezonlar bo'yicha baholanadi. Ball = bajarilgan mezonlar vaznining ulushi (qo'llanmaydiganlari hisobga olinmaydi). Tavsif AI uchun yo'riqnoma.",
+    "digest": "Haftalik dayjest",
+    "makeDigest": "Hozir tayyorlash",
+    "noDigest": "Hali dayjest yo'q (har dushanba 08:00 da tayyorlanadi)",
+    "digestStats": "Tahlil qilingan qo'ng'iroqlar: {{calls}} · o'rtacha ball: {{score}}",
+    "digestParts": {
+      "top_questions": "Ko'p beriladigan savollar",
+      "objections": "E'tirozlar",
+      "complaints": "Shikoyatlar",
+      "recommendations": "Tavsiyalar"
+    },
+    "digestNoAi": "AI ulanmagan yoki tahlil qilingan qo'ng'iroq yo'q — faqat raqamlar.",
+    "brief": "Bemor haqida qisqacha",
+    "hideBrief": "Yashirish",
+    "suggestion": "AI xulosasi (qo'ng'iroq yozuvidan)",
+    "noOutcome": "Natija aniq emas",
+    "confirm": "Tasdiqlash",
+    "edit": "Tuzatish"
   }
 }

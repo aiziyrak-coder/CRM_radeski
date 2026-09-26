@@ -82,6 +82,15 @@ export type Task = {
   appointment_at: string | null
   campaign_id: string | null
   created_at: string
+  /** the AI's reading of the last call made from this task, until the operator confirms it */
+  ai_suggestion: {
+    analysis_id: string
+    call_id: string
+    outcome: Outcome | null
+    reason: string | null
+    summary: string | null
+    next_step: string | null
+  } | null
 }
 
 export type TaskSummary = {
@@ -100,7 +109,13 @@ export const getTaskSummary = () => api<TaskSummary>('/tasks/summary')
 export const getPatientTasks = (patientId: string) => api<Task[]>(`/tasks/patient/${patientId}`)
 export const recordResult = (
   id: string,
-  body: { outcome: Outcome; reason?: string | null; note?: string | null; callback_at?: string | null },
+  body: {
+    outcome: Outcome
+    reason?: string | null
+    note?: string | null
+    callback_at?: string | null
+    analysis_id?: string | null
+  },
 ) => api<Task>(`/tasks/${id}/result`, { method: 'POST', body })
 export const createCallback = (patient_id: string, due_at: string, note?: string) =>
   api<{ created: boolean }>('/tasks', { method: 'POST', body: { patient_id, due_at, note } })

@@ -87,6 +87,42 @@ async def _sync_diagnoses() -> None:
         print(f"  {key:30} {value}")
 
 
+async def _ai_diagnoses() -> None:
+    from app.integrations.openai_client import enabled
+    from app.modules.diagnoses import service as diagnoses
+
+    if not enabled():
+        sys.exit("OPENAI_API_KEY bo'sh")
+    async with SessionLocal() as session:
+        counts = await diagnoses.suggest_with_ai(session, limit=5000)
+        await session.commit()
+    for key, value in sorted(counts.items()):
+        print(f"  {key:30} {value}")
+
+
+async def _stt_benchmark(args: argparse.Namespace) -> None:
+    from app.integrations.openai_client import enabled
+    from app.modules.ai.benchmark import PRICE_PER_MIN, pairs, run
+
+    if not enabled():
+        sys.exit("OPENAI_API_KEY bo'sh")
+    folder = Path(args.dir)
+    samples = pairs(folder)
+    if not samples:
+        sys.exit(f"{folder} da audio + bir xil nomli .txt juftlari topilmadi")
+    print(f"Namuna: {len(samples)} ta qo'ng'iroq")
+    results = await run(folder, [m.strip() for m in args.models.split(",")], args.language)
+    print(f"{'model':32} {'WER':>7} {'vaqt,s':>8} {'$/daq':>7}  xatolar")
+    for r in results:
+        wer = f"{100 * r.wer:.1f}%" if r.wer is not None else "—"
+        price = PRICE_PER_MIN.get(r.model)
+        print(
+            f"{r.model:32} {wer:>7} {r.seconds:8.1f} {price if price else '?':>7}  {len(r.errors)}"
+        )
+        for e in r.errors[:3]:
+            print(f"    {e}")
+
+
 async def _sync_catalog() -> None:
     from app.modules.catalog.sync import sync_from_site
 
@@ -115,6 +151,16 @@ def main() -> None:
 
     sub.add_parser("sync-catalog", help="filial, shifokor va xizmatlarni radeski.uz'dan olish")
     sub.add_parser("sync-diagnoses", help="tashxislar uchun toifa takliflarini yangilash")
+    sub.add_parser("ai-diagnoses", help="qoidaga tushmagan tashxislarga AI toifa taklifi")
+    bench = sub.add_parser(
+        "stt-benchmark", help="STT modellarini haqiqiy qo'ng'iroqlarda solishtirish"
+    )
+    bench.add_argument("--dir", required=True, help="audio + bir xil nomli .txt etalon")
+    bench.add_argument(
+        "--models",
+        default="gpt-4o-transcribe,gpt-4o-mini-transcribe,whisper-1,gpt-4o-transcribe-diarize",
+    )
+    bench.add_argument("--language", default=None, help="uz / ru (bo'sh = avtomatik)")
 
     args = parser.parse_args()
     if args.command == "create-user":
@@ -123,6 +169,10 @@ def main() -> None:
         asyncio.run(_sync_catalog())
     elif args.command == "sync-diagnoses":
         asyncio.run(_sync_diagnoses())
+    elif args.command == "ai-diagnoses":
+        asyncio.run(_ai_diagnoses())
+    elif args.command == "stt-benchmark":
+        asyncio.run(_stt_benchmark(args))
     elif args.command == "import-legacy":
         if not Path(args.dir).is_dir():
             sys.exit(f"Papka topilmadi: {args.dir}")

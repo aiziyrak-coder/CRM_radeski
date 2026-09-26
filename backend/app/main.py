@@ -3,10 +3,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+import app.modules.ai.rules  # noqa: F401  - operator review of AI suggestions
 import app.modules.tasks.rules  # noqa: F401  - registers the task rules on domain events
 from app.api import health
 from app.core.config import get_settings
 from app.core.db import SessionLocal
+from app.modules.ai.router import router as ai_router
 from app.modules.audit.router import router as audit_router
 from app.modules.campaigns.router import router as campaigns_router
 from app.modules.catalog.router import router as catalog_router
@@ -58,5 +60,6 @@ for router in (
     reports_router,
     timeline_router,
     telephony_router,
+    ai_router,
 ):
     app.include_router(router, prefix="/api")

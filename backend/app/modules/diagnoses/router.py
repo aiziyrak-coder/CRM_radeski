@@ -180,6 +180,17 @@ async def approve(
     return {"approved": approved}
 
 
+@router.post("/ai-suggest")
+async def ai_suggest(session: SessionDep, _: Approver) -> dict[str, int]:
+    from app.integrations.openai_client import enabled
+
+    if not enabled():
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="ai_disabled")
+    counts = await service.suggest_with_ai(session)
+    await session.commit()
+    return dict(counts)
+
+
 @router.post("/sync")
 async def sync(session: SessionDep, _: Approver) -> dict[str, int]:
     counts = await service.sync(session)

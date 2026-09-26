@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge, Button, Card, ErrorText, Input, Notice, Select } from '../components/ui'
+import { getAiStatus } from '../lib/ai'
 import { useAuth } from '../lib/auth-context'
 import {
   approveMappings,
@@ -10,6 +11,7 @@ import {
   getMappings,
   setMappingCategory,
   syncDiagnoses,
+  aiSuggestDiagnoses,
   type Category,
   type Mapping,
   type MappingStatus,
@@ -163,6 +165,8 @@ export default function DiagnosesPage() {
   }
   const approve = useMutation({ mutationFn: approveMappings, onSuccess: invalidate })
   const sync = useMutation({ mutationFn: syncDiagnoses, onSuccess: invalidate })
+  const aiSuggest = useMutation({ mutationFn: aiSuggestDiagnoses, onSuccess: invalidate })
+  const { data: ai } = useQuery({ queryKey: ['ai', 'status'], queryFn: getAiStatus, staleTime: 600_000 })
 
   const suggestedOnPage = data?.items.filter((m) => m.status === 'suggested').map((m) => m.id) ?? []
   const resetPaging = () => {
@@ -237,10 +241,23 @@ export default function DiagnosesPage() {
             <Button variant="ghost" disabled={sync.isPending} onClick={() => sync.mutate()}>
               {t('diagnoses.sync')}
             </Button>
+            {ai?.enabled && (data?.by_status.pending ?? 0) > 0 && (
+              <Button variant="secondary" disabled={aiSuggest.isPending} onClick={() => aiSuggest.mutate()}>
+                {aiSuggest.isPending ? t('app.loading') : t('diagnoses.aiSuggest')}
+              </Button>
+            )}
           </div>
         )}
+        {aiSuggest.data && (
+          <Notice>
+            {t('diagnoses.aiSuggested', {
+              count: aiSuggest.data.suggested ?? 0,
+              checked: aiSuggest.data.checked ?? 0,
+            })}
+          </Notice>
+        )}
         {approve.data && <Notice>{t('diagnoses.approved', { count: approve.data.approved })}</Notice>}
-        <ErrorText error={error ?? approve.error ?? sync.error} />
+        <ErrorText error={error ?? approve.error ?? sync.error ?? aiSuggest.error} />
 
         {data && (
           <div className={`mt-3 overflow-x-auto ${isFetching ? 'opacity-60' : ''}`}>

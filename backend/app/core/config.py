@@ -23,6 +23,12 @@ class Settings(BaseSettings):
 
     # External services
     openai_api_key: str = ""
+    # model names are settings so the STT benchmark (plan 4.1) can switch them without code
+    ai_stt_model: str = "gpt-4o-transcribe-diarize"
+    ai_llm_model: str = "gpt-5.4-mini"
+    ai_reasoning_effort: str = "low"  # empty for models without reasoning
+    ai_max_output_tokens: int = 6000
+    ai_min_talk_seconds: int = 15  # shorter calls aren't worth analysing
     site_api_url: str = "https://api.radeski.uz"
     # HMAC secret shared with radeski.uz for the form webhook (empty = webhook disabled)
     site_webhook_secret: str = ""

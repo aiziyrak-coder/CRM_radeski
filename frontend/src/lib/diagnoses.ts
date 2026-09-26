@@ -47,6 +47,8 @@ export const approveMappings = (ids: string[]) =>
   api<{ approved: number }>('/diagnoses/mappings/approve', { method: 'POST', body: { ids } })
 
 export const syncDiagnoses = () => api<Record<string, number>>('/diagnoses/sync', { method: 'POST' })
+export const aiSuggestDiagnoses = () =>
+  api<Record<string, number>>('/diagnoses/ai-suggest', { method: 'POST' })
 
 export const categoryName = (c: Pick<Category, 'name_uz' | 'name_ru'>, lang: string) =>
   lang === 'ru' ? c.name_ru : c.name_uz
