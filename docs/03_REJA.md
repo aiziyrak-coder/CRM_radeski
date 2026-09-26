@@ -14,7 +14,8 @@ Claude Code bilan ishlash tartibi: bitta sessiyada bitta vazifa (masalan, "0.3 �
 | 0.2b | Admin va rahbar uchun 2FA (TOTP) — TZ 5 talabi | Admin kirishda telefondagi ilova kodini so'raydi |
 | 0.3 ✅ | Bemorlar moduli: model, CRUD, telefonni normallashtirish, translit qidiruv, dublikatlarni aniqlash | "Абдуллаев" ham, "abdullayev" ham topiladi. Takroriy raqam kiritilsa ogohlantirish chiqadi |
 | 0.4 ✅ | **Import skripti**: asosiy fayl, 7 ta tuman fayli, psoriaz/vitiligo fayli, `nomer.xlsx`. F.I.Sh. katagini ajratish, xatolar hisoboti | ~6 700 bemor va ~47 500 sovuq raqam import qilinadi. Xato qatorlar alohida CSV'ga chiqadi. Qayta ishga tushirilsa dublikat yaratilmaydi |
-| 0.5 | **Tashxislarni normallashtirish**: 1 422 xil yozuv → AI toifa taklif qiladi → admin panelda moslik jadvali → tasdiqlash → qo'llash | Shifokor jadvalni ko'rib tasdiqlaydi. Bemorlar toifa bo'yicha filtrlanadi |
+| 0.5 ✅ | **Tashxislarni normallashtirish**: ~1 700 xil yozuv → qoidalar (kalit so'z + MKB) toifa taklif qiladi (98% qamrov) → "Tashxislar" sahifasida shifokor tasdiqlaydi → bemorlarga qo'llanadi | Shifokor jadvalni ko'rib tasdiqlaydi. Bemorlar toifa bo'yicha filtrlanadi |
+| 0.5b | Qoidalar tanimagan ~160 matn uchun OpenAI taklifi (kalit berilgach) | Qolgan matnlarga AI toifa taklif qiladi, shifokor tasdiqlaydi |
 | 0.6 | Katalogni radeski.uz'dan sinxronlash (filiallar, shifokorlar, yo'nalishlar, 806 narx) va qo'shimcha maydonlar formasi | Tungi sinxronizatsiya ishlaydi. Davomiylik va resurs qo'lda to'ldiriladi |
 
 **Natija**: tozalangan va segmentlangan baza. Buni klinikaga darhol ko'rsatish mumkin, masalan: "trixologga tegishli alopesiyali 850 bemor".

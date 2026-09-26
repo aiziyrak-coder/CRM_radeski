@@ -15,7 +15,8 @@
     "reports": "Hisobotlar",
     "users": "Foydalanuvchilar",
     "audit": "Audit jurnali",
-    "profile": "Profil"
+    "profile": "Profil",
+    "diagnoses": "Tashxislar"
   },
   "roles": {
     "operator": "Operator",
@@ -51,7 +52,9 @@
     "patient_merged": "Bu karta boshqa kartaga birlashtirilgan",
     "already_merged": "Karta allaqachon birlashtirilgan",
     "same_patient": "Kartani o'zi bilan birlashtirib bo'lmaydi",
-    "patient_not_found": "Bemor topilmadi"
+    "patient_not_found": "Bemor topilmadi",
+    "unknown_category": "Bunday toifa yo'q",
+    "mapping_not_found": "Yozuv topilmadi"
   },
   "home": {
     "welcome": "Xush kelibsiz, {{name}}",
@@ -117,7 +120,10 @@
       "patient.view": "Bemor kartasini ochdi",
       "patient.phones": "Bemor telefonlarini o'zgartirdi",
       "patient.do_not_call": "Qo'ng'iroq qilmaslik belgisi",
-      "patient.merge": "Bemor kartalarini birlashtirdi"
+      "patient.merge": "Bemor kartalarini birlashtirdi",
+      "diagnosis.map": "Tashxis toifasini belgiladi",
+      "diagnosis.approve": "Tashxis toifalarini tasdiqladi",
+      "import.legacy": "Eski bazani import qildi"
     }
   },
   "profile": {
@@ -186,7 +192,9 @@
     "visitRepeat": "qayta",
     "tagCheck": "Ma'lumotni tekshirish kerak",
     "tagNoName": "Ismi yo'q",
-    "legacyNote": "Eski bazadan import qilingan. Qo'ng'iroqda ma'lumotlarni aniqlab, kartani to'ldiring."
+    "legacyNote": "Eski bazadan import qilingan. Qo'ng'iroqda ma'lumotlarni aniqlab, kartani to'ldiring.",
+    "allCategories": "Barcha tashxislar",
+    "categoryHint": "Tashxis toifasi"
   },
   "kinds": {
     "active": "Faol bemor",
@@ -211,5 +219,43 @@
     "import": "Eski bazadan import",
     "cold_base": "Sovuq baza",
     "other": "Boshqa"
+  },
+  "diagnoses": {
+    "title": "Tashxislarni toifalash",
+    "intro": "Eski bazadagi tashxislar erkin matnda yozilgan. Tizim ularni toifalarga ajratishni taklif qiladi; shifokor tasdiqlagandan keyingina bemorlarga qo'llanadi. Eng ko'p uchraydigan tashxislar birinchi turadi.",
+    "categories": "Toifalar",
+    "patients": "{{count}} bemor",
+    "waiting": "{{count}} ta taklif kutmoqda",
+    "text": "Tashxis matni",
+    "count": "Bemorlar",
+    "category": "Toifa",
+    "status": "Holati",
+    "search": "Tashxis matni bo'yicha qidirish",
+    "allCategories": "Barcha toifalar",
+    "allStatuses": "Barcha holatlar",
+    "approveSelected": "Tanlanganlarni tasdiqlash ({{count}})",
+    "approvePage": "Sahifadagi barcha takliflarni tasdiqlash",
+    "approved": "{{count}} ta tasdiqlandi",
+    "choose": "— toifani tanlang —",
+    "sync": "Yangi tashxislarni tekshirish",
+    "readOnly": "Toifalarni faqat shifokor yoki administrator tasdiqlaydi.",
+    "statuses": {
+      "pending": "Aniqlanmagan",
+      "suggested": "Taklif",
+      "approved": "Tasdiqlangan"
+    },
+    "methods": {
+      "rule": "qoida",
+      "ai": "AI",
+      "manual": "qo'lda"
+    },
+    "specialties": {
+      "dermatologist": "Dermatolog",
+      "trichologist": "Trixolog",
+      "cosmetologist": "Kosmetolog",
+      "oncodermatologist": "Dermatoonkolog",
+      "podologist": "Podolog"
+    },
+    "legend": "Yashil raqam — toifasi tasdiqlangan bemorlar, sariq — tasdiqlashni kutayotgan takliflar. Toifani bossangiz, ro'yxat shu toifaga filtrlanadi."
   }
 }

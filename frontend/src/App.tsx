@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import { useAuth } from './lib/auth-context'
 import { NAV_ITEMS, type NavItem } from './lib/navigation'
 import AuditPage from './pages/AuditPage'
+import DiagnosesPage from './pages/DiagnosesPage'
 import HomePage from './pages/HomePage'
 import PatientCardPage from './pages/PatientCardPage'
 import PatientsPage from './pages/PatientsPage'
@@ -18,6 +19,7 @@ const PAGES: Record<string, ReactNode> = {
   '/audit': <AuditPage />,
   '/profile': <ProfilePage />,
   '/patients': <PatientsPage />,
+  '/diagnoses': <DiagnosesPage />,
 }
 
 // detail pages inherit the roles of their menu section

@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.api import health
 from app.core.config import get_settings
 from app.modules.audit.router import router as audit_router
+from app.modules.diagnoses.router import router as diagnoses_router
 from app.modules.patients.router import router as patients_router
 from app.modules.users.router import auth_router, users_router
 
@@ -14,5 +15,12 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
-for router in (health.router, auth_router, users_router, audit_router, patients_router):
+for router in (
+    health.router,
+    auth_router,
+    users_router,
+    audit_router,
+    patients_router,
+    diagnoses_router,
+):
     app.include_router(router, prefix="/api")

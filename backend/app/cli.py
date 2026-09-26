@@ -77,6 +77,16 @@ async def _import_legacy(args: argparse.Namespace) -> None:
         print(f"Hisobotni yozib bo'lmadi ({exc}); muammoli qatorlar: {len(report.problems)}")
 
 
+async def _sync_diagnoses() -> None:
+    from app.modules.diagnoses import service as diagnoses
+
+    async with SessionLocal() as session:
+        counts = await diagnoses.sync(session)
+        await session.commit()
+    for key, value in sorted(counts.items()):
+        print(f"  {key:30} {value}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -93,9 +103,13 @@ def main() -> None:
         "--report", help="muammoli qatorlar CSV fayli (standart: <dir>/import-problems.csv)"
     )
 
+    sub.add_parser("sync-diagnoses", help="tashxislar uchun toifa takliflarini yangilash")
+
     args = parser.parse_args()
     if args.command == "create-user":
         asyncio.run(_create_user(args))
+    elif args.command == "sync-diagnoses":
+        asyncio.run(_sync_diagnoses())
     elif args.command == "import-legacy":
         if not Path(args.dir).is_dir():
             sys.exit(f"Papka topilmadi: {args.dir}")

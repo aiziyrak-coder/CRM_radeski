@@ -7,7 +7,7 @@ from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.text import phone_digits_query, search_key
-from app.modules.patients.models import Patient, PatientKind, PatientPhone
+from app.modules.patients.models import Patient, PatientCondition, PatientKind, PatientPhone
 from app.modules.patients.schemas import (
     DuplicateCandidate,
     PatientCreate,
@@ -170,11 +170,18 @@ async def remove_phone(session: AsyncSession, patient: Patient, phone: PatientPh
 # --- search -----------------------------------------------------------------------------------
 
 
-def _search_query(q: str | None, kind: PatientKind | None) -> tuple[Select, Any]:
+def _search_query(
+    q: str | None, kind: PatientKind | None, category: str | None = None
+) -> tuple[Select, Any]:
     stmt = select(Patient).where(_live())
     order: Any = Patient.full_name
     if kind:
         stmt = stmt.where(Patient.kind == kind)
+    if category:
+        with_category = select(PatientCondition.patient_id).where(
+            PatientCondition.category_code == category
+        )
+        stmt = stmt.where(Patient.id.in_(with_category))
     if not q or not q.strip():
         if not kind:
             # the cold base is ~45k nameless numbers; browse it only when asked for explicitly
@@ -199,8 +206,9 @@ async def search(
     kind: PatientKind | None,
     limit: int,
     offset: int,
+    category: str | None = None,
 ) -> tuple[int, list[Patient]]:
-    stmt, order = _search_query(q, kind)
+    stmt, order = _search_query(q, kind, category)
     total = await session.scalar(select(func.count()).select_from(stmt.subquery()))
     rows = await session.scalars(stmt.order_by(order, Patient.id).limit(limit).offset(offset))
     return total or 0, list(rows)

@@ -275,6 +275,12 @@ async def run_import(
         await importer.import_cold(path)
     await session.flush()
 
+    # key the new diagnoses and suggest categories for texts never seen before (phase 0.5)
+    from app.modules.diagnoses import service as diagnoses
+
+    for key, value in (await diagnoses.sync(session)).items():
+        report.counts[f"diagnoses:{key}"] = value
+
     audit.record(session, "import.legacy", after={"dry_run": dry_run, **dict(report.counts)})
     if dry_run:
         await session.rollback()

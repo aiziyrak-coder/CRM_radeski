@@ -63,10 +63,11 @@ async def list_patients(
     _: Staff,
     q: Annotated[str | None, Query(max_length=100)] = None,
     kind: PatientKind | None = None,
+    category: Annotated[str | None, Query(max_length=50)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PatientPage:
-    total, rows = await service.search(session, q, kind, limit, offset)
+    total, rows = await service.search(session, q, kind, limit, offset, category)
     return PatientPage(total=total, items=[PatientListItem.model_validate(p) for p in rows])
 
 

@@ -81,12 +81,14 @@ export type PatientInput = {
 export function searchPatients(params: {
   q?: string
   kind?: PatientKind | ''
+  category?: string
   offset: number
   limit: number
 }) {
   const qs = new URLSearchParams({ offset: String(params.offset), limit: String(params.limit) })
   if (params.q?.trim()) qs.set('q', params.q.trim())
   if (params.kind) qs.set('kind', params.kind)
+  if (params.category) qs.set('category', params.category)
   return api<{ total: number; items: PatientListItem[] }>(`/patients?${qs}`)
 }
 

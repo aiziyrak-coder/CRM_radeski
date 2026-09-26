@@ -8,6 +8,7 @@ import PatientTags from '../components/PatientTags'
 import PatientRow from '../components/PatientRow'
 import { Badge, Button, Card, ErrorText, Field, Input, Notice } from '../components/ui'
 import { useAuth } from '../lib/auth-context'
+import { categoryName, getCategories } from '../lib/diagnoses'
 import {
   addPhone,
   deletePhone,
@@ -97,7 +98,16 @@ function Details({ patient }: { patient: Patient }) {
 }
 
 function Conditions({ patient }: { patient: Patient }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const { data: categories = [] } = useQuery({
+    queryKey: ['diagnoses', 'categories'],
+    queryFn: getCategories,
+    staleTime: 60_000,
+  })
+  const nameOf = (code: string | null) => {
+    const c = categories.find((x) => x.code === code)
+    return c ? categoryName(c, i18n.language) : null
+  }
   if (patient.conditions.length === 0 && patient.kind !== 'legacy') return null
   return (
     <Card title={t('patients.conditions')}>
@@ -107,6 +117,11 @@ function Conditions({ patient }: { patient: Patient }) {
         <ul className="space-y-1 text-sm">
           {patient.conditions.map((c) => (
             <li key={c.id}>
+              {c.category_code && (
+                <span className="mr-2">
+                  <Badge tone="good">{nameOf(c.category_code)}</Badge>
+                </span>
+              )}
               {c.raw_text}
               {c.visit_type && (
                 <span className="ml-2 text-xs text-slate-500">

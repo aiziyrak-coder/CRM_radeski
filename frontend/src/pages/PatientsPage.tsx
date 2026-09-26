@@ -6,6 +6,7 @@ import PatientForm from '../components/PatientForm'
 import PatientRow from '../components/PatientRow'
 import { Button, Card, ErrorText, Input, Select } from '../components/ui'
 import { ApiError } from '../lib/api'
+import { categoryName, getCategories } from '../lib/diagnoses'
 import {
   KINDS,
   createPatient,
@@ -114,10 +115,16 @@ function NewPatient({ onClose }: { onClose: () => void }) {
 }
 
 export default function PatientsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [params, setParams] = useSearchParams()
+  const { data: categories = [] } = useQuery({
+    queryKey: ['diagnoses', 'categories'],
+    queryFn: getCategories,
+    staleTime: 60_000,
+  })
   const [q, setQ] = useState(params.get('q') ?? '')
   const kind = (params.get('kind') ?? '') as PatientKind | ''
+  const category = params.get('category') ?? ''
   const offset = Number(params.get('offset') ?? 0)
   const [adding, setAdding] = useState(false)
   const debouncedQ = useDebounced(q, 300)
@@ -137,8 +144,8 @@ export default function PatientsPage() {
   }, [debouncedQ, setParams])
 
   const { data, error, isFetching } = useQuery({
-    queryKey: ['patients', debouncedQ.trim(), kind, offset],
-    queryFn: () => searchPatients({ q: debouncedQ, kind, offset, limit: PAGE }),
+    queryKey: ['patients', debouncedQ.trim(), kind, category, offset],
+    queryFn: () => searchPatients({ q: debouncedQ, kind, category, offset, limit: PAGE }),
     placeholderData: keepPreviousData,
   })
 
@@ -170,6 +177,21 @@ export default function PatientsPage() {
             autoFocus={!adding}
             className="md:flex-1"
           />
+          <Select
+            value={category}
+            onChange={(e) => setParam('category', e.target.value)}
+            className="md:w-64"
+            aria-label={t('patients.categoryHint')}
+          >
+            <option value="">{t('patients.allCategories')}</option>
+            {categories
+              .filter((c) => c.patients > 0)
+              .map((c) => (
+                <option key={c.code} value={c.code}>
+                  {categoryName(c, i18n.language)} ({c.patients})
+                </option>
+              ))}
+          </Select>
           <Select value={kind} onChange={(e) => setParam('kind', e.target.value)} className="md:w-56">
             <option value="">{t('patients.allKinds')}</option>
             {KINDS.map((k) => (

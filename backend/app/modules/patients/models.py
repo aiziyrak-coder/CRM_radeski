@@ -129,6 +129,9 @@ class PatientCondition(UUIDPk, Base):
         ForeignKey("patients.id", ondelete="CASCADE"), index=True
     )
     raw_text: Mapped[str] = mapped_column(String(500))
+    # diagnoses.categories.normalize_text(raw_text); joins to diagnosis_mappings.text
+    text_key: Mapped[str | None] = mapped_column(String(500), index=True)
+    # set only from an *approved* diagnosis mapping (phase 0.5)
     category_code: Mapped[str | None] = mapped_column(String(50), index=True)
     visit_type: Mapped[str | None] = mapped_column(String(20))  # "first" | "repeat" if known
     source: Mapped[str] = mapped_column(String(100))  # e.g. "import:main", "import:psoriasis"

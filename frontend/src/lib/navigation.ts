@@ -27,6 +27,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     soon: true,
   },
   { path: '/my-day', labelKey: 'nav.myDay', roles: ['doctor'], soon: true },
+  { path: '/diagnoses', labelKey: 'nav.diagnoses', roles: ['doctor', 'supervisor', 'admin'] },
   { path: '/campaigns', labelKey: 'nav.campaigns', roles: ['supervisor', 'admin'], soon: true },
   { path: '/qa', labelKey: 'nav.qa', roles: ['supervisor', 'admin'], soon: true },
   { path: '/reports', labelKey: 'nav.reports', roles: ['supervisor', 'owner', 'admin'], soon: true },
