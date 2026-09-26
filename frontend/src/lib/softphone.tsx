@@ -60,8 +60,20 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
   const audio = useRef<HTMLAudioElement | null>(null)
   const stopRing = useRef<(() => void) | null>(null)
   const enabled = allowed && Boolean(creds?.enabled)
-  const extension = creds?.extension ?? null
-  const password = creds?.password ?? null
+  // fresh credentials (rotated SIP secret, extension changed) restart the SIP agent, which
+  // would hang up a call in progress: they are applied only once the line is free
+  const fetched =
+    enabled && creds?.extension && creds.password
+      ? { extension: creds.extension, password: creds.password }
+      : null
+  const [applied, setApplied] = useState(fetched)
+  const fetchedKey = fetched ? `${fetched.extension}:${fetched.password}` : ''
+  const appliedKey = applied ? `${applied.extension}:${applied.password}` : ''
+  const lineBusy = call !== null
+  // derived during render (React's "adjust state on prop change"), not in an effect
+  if (!lineBusy && fetchedKey !== appliedKey) setApplied(fetched)
+  const extension = applied?.extension ?? null
+  const password = applied?.password ?? null
 
   const attach = useCallback((s: RTCSession, incoming: boolean, taskId: string | null) => {
     session.current = s
@@ -110,7 +122,7 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!enabled || !extension || !password) return
+    if (!extension || !password) return
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
     let agent: UA | null = null
     let cancelled = false
@@ -128,14 +140,17 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
         session_timers: false,
         user_agent: 'Radeski CRM',
       })
-      agent.on('connecting', () => setStatus('connecting'))
+      // a stopped agent (credentials changed, logout) may still report; only the live one counts
+      agent.on('connecting', () => !cancelled && setStatus('connecting'))
       agent.on('registered', () => {
+        if (cancelled) return
         failures = 0
         window.clearTimeout(retryTimer)
         setStatus('registered')
       })
-      agent.on('unregistered', () => setStatus('offline'))
+      agent.on('unregistered', () => !cancelled && setStatus('offline'))
       agent.on('registrationFailed', (e: UnRegisteredEvent) => {
+        if (cancelled) return
         setStatus('offline')
         const code = e.response?.status_code
         if ((code && AUTH_FAILED.includes(code)) || e.cause === 'Authentication Error') {
@@ -150,8 +165,9 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
           if (!cancelled && agent?.isConnected() && !agent.isRegistered()) agent.register()
         }, delay)
       })
-      agent.on('disconnected', () => setStatus('offline'))
+      agent.on('disconnected', () => !cancelled && setStatus('offline'))
       agent.on('newRTCSession', (e: RTCSessionEvent) => {
+        if (cancelled) return
         if (e.originator !== 'remote') return // outgoing sessions are attached in dial()
         if (session.current) {
           e.session.terminate({ status_code: 486, reason_phrase: 'Busy Here' })
@@ -169,10 +185,11 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
       agent?.stop()
       ua.current = null
     }
-  }, [enabled, extension, password, attach, queryClient, userId])
+  }, [extension, password, attach, queryClient, userId])
 
-  // a phone call is activity: the idle logout must not end the session mid-call
-  const inCall = call !== null
+  // a conversation is activity: the idle logout must not end the session mid-call (a phone
+  // ringing at an empty desk is not)
+  const inCall = call?.state === 'active' || call?.state === 'calling'
   useEffect(() => {
     if (!inCall) return
     const ping = () => window.dispatchEvent(new Event(ACTIVITY_EVENT))

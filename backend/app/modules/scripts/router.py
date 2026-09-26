@@ -15,7 +15,9 @@ from app.modules.users.models import Language, Role, User
 
 router = APIRouter(prefix="/scripts", tags=["scripts"])
 Reader = Annotated[
-    User, Depends(require_roles(Role.OPERATOR, Role.SUPERVISOR, Role.REGISTRAR, Role.ADMIN))
+    User,
+    # owner reads them too: the QA pages name each call by its script
+    Depends(require_roles(Role.OPERATOR, Role.SUPERVISOR, Role.REGISTRAR, Role.OWNER, Role.ADMIN)),
 ]
 Editor = Annotated[User, Depends(require_roles(Role.SUPERVISOR, Role.ADMIN))]
 

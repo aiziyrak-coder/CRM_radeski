@@ -36,7 +36,9 @@ from app.modules.telephony.models import Call, CallDirection, RecordingStatus
 
 log = logging.getLogger(__name__)
 MAX_ATTEMPTS = 3
-STUCK_AFTER = timedelta(minutes=30)  # an in-progress analysis older than this was interrupted
+# an in-progress analysis older than this was interrupted: well above the slowest run
+# (STT chunks + flex LLM with its timeout/retries), so a slow run is never started twice
+STUCK_AFTER = timedelta(minutes=90)
 
 
 # --- criteria ---------------------------------------------------------------------------------

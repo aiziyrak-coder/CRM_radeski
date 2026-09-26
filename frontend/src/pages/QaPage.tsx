@@ -349,7 +349,7 @@ export default function QaPage() {
       {status && !status.enabled && <Notice>{t('ai.disabled')}</Notice>}
       {status?.enabled && status.spent_today_usd != null && (
         <p className="text-xs text-slate-500">
-          {t('ai.spend', {
+          {t(status.daily_budget_usd > 0 ? 'ai.spend' : 'ai.spendNoLimit', {
             spent: status.spent_today_usd.toFixed(3),
             budget: status.daily_budget_usd,
           })}

@@ -277,13 +277,25 @@ export default function LeadsPage() {
     placeholderData: keepPreviousData,
     refetchInterval: 30_000,
   })
+  // the list shrank under the current page (leads closed, filter): step back to the last page
+  const total = data?.total
+  if (total !== undefined && offset > 0 && offset >= total) {
+    setOffset(Math.max(0, Math.floor((total - 1) / PAGE) * PAGE))
+  }
   return (
     <div className="max-w-6xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">{t('leads.title')}</h1>
         {!adding && <Button onClick={() => setAdding(true)}>{t('leads.new')}</Button>}
       </div>
-      {adding && <NewLead onClose={() => setAdding(false)} />}
+      {adding && (
+        <NewLead
+          onClose={() => {
+            setAdding(false)
+            setOffset(0) // the new lead is on the first page
+          }}
+        />
+      )}
       <Card>
         <div className="mb-3 flex flex-col gap-2 md:flex-row">
           <Input

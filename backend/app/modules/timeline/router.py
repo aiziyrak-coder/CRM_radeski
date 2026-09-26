@@ -1,7 +1,7 @@
 """Patient card timeline (plan 2.5): every touchpoint with the patient in one feed."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.core.deps import CurrentUser, SessionDep, client_ip
 from app.modules.ai.models import AnalysisStatus, CallAnalysis
 from app.modules.audit import service as audit
+from app.modules.audit.models import AuditLog
 from app.modules.catalog.models import Doctor, Service
 from app.modules.leads.models import Lead
 from app.modules.messaging.models import Conversation, Message
@@ -25,6 +26,7 @@ from app.modules.users.models import Role, User
 router = APIRouter(prefix="/patients", tags=["timeline"])
 
 PER_SOURCE = 100
+TIMELINE_AUDIT_WINDOW = timedelta(minutes=10)
 # call notes are call-center material; doctors see the medical part of the history
 SEES_CALLS = (Role.OPERATOR, Role.SUPERVISOR, Role.REGISTRAR, Role.OWNER, Role.ADMIN)
 
@@ -61,12 +63,24 @@ async def timeline(
     # ARXITEKTURA 5: a doctor sees only patients they have (had) an appointment with
     if not await scheduling.can_see_patient(session, user, patient_id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="forbidden")
-    # TZ 5: looking at a patient's history is audited like opening the card
-    audit.record(
-        session, "patient.timeline", user_id=user.id, entity="patient", entity_id=patient.id,
-        ip=client_ip(request),
-    )  # fmt: skip
-    await session.commit()
+    # TZ 5: looking at a patient's history is audited like opening the card — once per user and
+    # patient per few minutes (the page refetches it after every booking or language switch)
+    recent = await session.scalar(
+        select(AuditLog.id)
+        .where(
+            AuditLog.action == "patient.timeline",
+            AuditLog.user_id == user.id,
+            AuditLog.entity_id == str(patient.id),
+            AuditLog.created_at > datetime.now(UTC) - TIMELINE_AUDIT_WINDOW,
+        )
+        .limit(1)
+    )
+    if recent is None:
+        audit.record(
+            session, "patient.timeline", user_id=user.id, entity="patient",
+            entity_id=patient.id, ip=client_ip(request),
+        )  # fmt: skip
+        await session.commit()
 
     def name(o: Doctor | Service) -> str:
         return o.name_ru if lang == "ru" else o.name_uz

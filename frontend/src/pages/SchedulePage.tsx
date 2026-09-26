@@ -198,12 +198,14 @@ export default function SchedulePage() {
   // only the id: the panel shows the appointment from the refreshed day, not a stale snapshot
   const [openedId, setOpenedId] = useState<string | null>(null)
 
-  const set = (key: string, value: string) =>
+  const set = (key: string, value: string) => {
+    setOpenedId(null) // another day or branch: the open panel doesn't belong to it
     setParams((prev) => {
       const next = new URLSearchParams(prev)
       next.set(key, value)
       return next
     })
+  }
 
   const columns = useQuery({
     queryKey: ['appointments', 'columns', date, branchId],

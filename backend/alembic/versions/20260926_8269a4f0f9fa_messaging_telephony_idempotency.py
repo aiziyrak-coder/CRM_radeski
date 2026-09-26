@@ -34,6 +34,19 @@ def upgrade() -> None:
         )
         """
     )
+    # Telegram Business message ids are now stored with a "b" prefix (the bot chat and the
+    # business chat share one conversation and their numbers can collide); older incoming
+    # messages of business chats get it too, so a new bot message isn't taken for a repeat
+    op.execute(
+        """
+        UPDATE messages m SET external_id = 'b' || m.external_id
+        FROM conversations c
+        WHERE m.conversation_id = c.id
+          AND c.channel = 'telegram' AND c.business_connection_id IS NOT NULL
+          AND m.direction = 'in' AND m.external_id IS NOT NULL
+          AND m.external_id NOT LIKE 'b%'
+        """
+    )
     op.create_index(
         "uq_messages_external",
         "messages",

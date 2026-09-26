@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import TemplatesEditor from '../components/TemplatesEditor'
 import ScriptsEditor from '../components/ScriptsEditor'
@@ -153,7 +153,7 @@ function DoctorEditor({ doctor, isAdmin }: { doctor: Doctor; isAdmin: boolean })
     queryFn: () => getDoctorSchedule(doctor.id),
   })
   const [absence, setAbsence] = useState({ date_from: '', date_to: '', reason: '' })
-  // the colour picker fires on every drag step; keep it local and save when the field is left
+  // the colour picker fires on every drag step; keep it local (saved by the effect below)
   const [color, setColor] = useState(doctor.color ?? '#0f766e')
   const badRange = Boolean(absence.date_from && absence.date_to && absence.date_from > absence.date_to)
 
@@ -173,6 +173,14 @@ function DoctorEditor({ doctor, isAdmin }: { doctor: Doctor; isAdmin: boolean })
     },
   })
   const delAbs = useMutation({ mutationFn: deleteAbsence, onSuccess: refresh })
+  // saved shortly after the last change: blur is unreliable with native colour pickers
+  const { mutate: saveDoctorNow } = saveDoctor
+  const savedColor = doctor.color ?? '#0f766e'
+  useEffect(() => {
+    if (color === savedColor) return
+    const timer = window.setTimeout(() => saveDoctorNow({ color }), 700)
+    return () => window.clearTimeout(timer)
+  }, [color, savedColor, saveDoctorNow])
   return (
     <div className="space-y-5">
       <div>
@@ -210,9 +218,6 @@ function DoctorEditor({ doctor, isAdmin }: { doctor: Doctor; isAdmin: boolean })
               type="color"
               value={color}
               onChange={(e) => setColor(e.target.value)}
-              onBlur={() => {
-                if (color !== (doctor.color ?? '#0f766e')) saveDoctor.mutate({ color })
-              }}
               className="h-10 w-20 p-1"
             />
           </Field>
@@ -235,7 +240,8 @@ function DoctorEditor({ doctor, isAdmin }: { doctor: Doctor; isAdmin: boolean })
       )}
       <ErrorText error={saveDoctor.error} />
 
-      {schedule.data && (
+      {/* fresh data only: the editor starts from it, a cached copy could overwrite newer changes */}
+      {schedule.data && schedule.isFetchedAfterMount && (
         <WeeklyEditor
           key={doctor.id}
           doctorId={doctor.id}

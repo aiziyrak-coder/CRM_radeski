@@ -16,6 +16,7 @@ from app.integrations.telegram import get_telegram
 from app.modules.ai.models import AnalysisStatus, CallAnalysis
 from app.modules.leads.models import Lead, LeadStage
 from app.modules.messaging.models import Conversation, Message, MessageStatus
+from app.modules.tasks.models import Task, TaskStatus, TaskType
 from app.modules.telephony.models import (
     UNANSWERED_INBOUND,
     Call,
@@ -52,6 +53,13 @@ async def system_status(session: SessionDep, user: Staff) -> dict[str, Any]:
             ),
             "unread_chats": await _count(
                 session, select(Conversation.id).where(Conversation.unread > 0)
+            ),
+            # missed calls still waiting for a callback (what the header alert asks to handle)
+            "missed_open": await _count(
+                session,
+                select(Task.id).where(
+                    Task.type == TaskType.MISSED_CALL, Task.status == TaskStatus.OPEN
+                ),
             ),
             # TZ 4.4: an inquiry unanswered past its SLA is shown to the supervisor (header alert)
             "leads_sla_breached": await _count(

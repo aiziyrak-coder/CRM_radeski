@@ -28,15 +28,17 @@ def _run(fn: Callable[[AsyncSession], Awaitable[Any]]) -> Any:
 
 @celery_app.task(name="jobs.confirmations")
 def confirmations() -> int:
-    from app.modules.tasks.rules import generate_confirmations
+    from app.modules.tasks.rules import close_already_booked, generate_confirmations
 
+    _run(close_already_booked)  # before the morning queue is worked
     return _run(generate_confirmations)
 
 
 @celery_app.task(name="jobs.lost_leads")
 def lost_leads() -> int:
-    from app.modules.tasks.rules import generate_lost_leads
+    from app.modules.tasks.rules import close_already_booked, generate_lost_leads
 
+    _run(close_already_booked)  # hourly: calls that came due since the morning
     return _run(generate_lost_leads)
 
 

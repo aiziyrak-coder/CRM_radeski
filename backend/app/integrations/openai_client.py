@@ -27,8 +27,9 @@ def client() -> AsyncOpenAI:
     key = get_settings().openai_api_key
     if not key:
         raise AiDisabledError("OPENAI_API_KEY is empty")
-    # the SDK retries 429/5xx with backoff on its own; flex requests can take minutes
-    return AsyncOpenAI(api_key=key, max_retries=3, timeout=600)
+    # the SDK retries 429/5xx/timeouts with backoff on its own; flex requests can take minutes.
+    # Worst case per request ~(1 + 2) x 300 s, far below ai.service.STUCK_AFTER
+    return AsyncOpenAI(api_key=key, max_retries=2, timeout=300)
 
 
 def enabled() -> bool:

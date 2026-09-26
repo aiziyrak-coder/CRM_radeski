@@ -122,7 +122,8 @@
     "recording_not_found": "Yozuv topilmadi",
     "user_not_found": "Foydalanuvchi topilmadi",
     "not_authenticated": "Tizimga qayta kiring",
-    "ai_budget_exceeded": "Bugungi AI limiti tugadi, ertaga qayta urinib ko'ring"
+    "ai_budget_exceeded": "Bugungi AI limiti tugadi, ertaga qayta urinib ko'ring",
+    "absence_not_found": "Ta'til topilmadi (allaqachon o'chirilgan)"
   },
   "home": {
     "welcome": "Xush kelibsiz, {{name}}",
@@ -156,7 +157,8 @@
       "messages_failed_other": "{{count}} ta xabar yuborilmadi (Chatlar sahifasida xatosi ko'rinadi)"
     },
     "queued_one": "Navbatda {{count}} ta xabar (tungi soatlarda ertalab ketadi)",
-    "queued_other": "Navbatda {{count}} ta xabar (tungi soatlarda ertalab ketadi)"
+    "queued_other": "Navbatda {{count}} ta xabar (tungi soatlarda ertalab ketadi)",
+    "aiSpendNoLimit": "bugun ${{spent}}"
   },
   "users": {
     "title": "Foydalanuvchilar",
@@ -553,7 +555,10 @@
     "illness": "Kasallik",
     "forgot": "Esidan chiqqan",
     "no_money": "Pul yo'q",
-    "other": "Boshqa"
+    "other": "Boshqa",
+    "refused": "Rad etdi",
+    "wrong_number": "Noto'g'ri raqam",
+    "do_not_call": "Qo'ng'iroq qilmaslikni so'radi"
   },
   "tasks": {
     "title": "Vazifalar",
@@ -715,9 +720,9 @@
   },
   "alerts": {
     "title": "Ogohlantirishlar",
-    "sla": "15 daqiqada javob berilmagan murojaatlar",
+    "sla": "Javob muddati o'tgan murojaatlar",
     "redFlags": "Ko'rib chiqilmagan qizil bayroqlar",
-    "missed": "Bugungi javobsiz qo'ng'iroqlar"
+    "missed": "Qayta qo'ng'iroq kutayotgan javobsiz qo'ng'iroqlar"
   },
   "homeOps": {
     "tasks": "Bugungi vazifalar",
@@ -931,7 +936,8 @@
       "budget": "Bugungi AI limiti tugadi — ertaga qayta uriniladi",
       "disabled": "AI ulanmagan",
       "generic": "Tahlil qilib bo'lmadi"
-    }
+    },
+    "spendNoLimit": "Bugungi AI xarajati: ${{spent}} (kunlik chegara yo'q)"
   },
   "inbox": {
     "title": "Chatlar",

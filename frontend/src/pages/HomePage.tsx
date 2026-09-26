@@ -136,7 +136,7 @@ function SystemHealth() {
               ok={i.ai}
               detail={
                 i.ai && i.ai_spent_today_usd != null && i.ai_daily_budget_usd != null
-                  ? t('health.aiSpend', {
+                  ? t(i.ai_daily_budget_usd > 0 ? 'health.aiSpend' : 'health.aiSpendNoLimit', {
                       spent: i.ai_spent_today_usd.toFixed(3),
                       budget: i.ai_daily_budget_usd,
                     })

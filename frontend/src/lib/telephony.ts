@@ -1,4 +1,4 @@
-import { api, ApiError, getAccessToken, refreshSession } from './api'
+import { api, apiBlob } from './api'
 
 export type CallDirection = 'in' | 'out'
 export type CallStatus =
@@ -82,15 +82,7 @@ export function getCalls(filters: {
 
 /** <audio> can't send the bearer token, so the recording is fetched and played from a blob URL. */
 export async function recordingUrl(callId: string): Promise<string> {
-  const load = () =>
-    fetch(`/api/telephony/calls/${callId}/recording`, {
-      headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
-      credentials: 'include',
-    })
-  let resp = await load()
-  if (resp.status === 401 && (await refreshSession())) resp = await load()
-  if (!resp.ok) throw new ApiError(resp.status, 'recording_not_found')
-  return URL.createObjectURL(await resp.blob())
+  return URL.createObjectURL(await apiBlob(`/telephony/calls/${callId}/recording`))
 }
 
 /** 125 -> '2:05' */

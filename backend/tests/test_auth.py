@@ -160,14 +160,20 @@ async def test_update_own_language(client: AsyncClient) -> None:
 
 async def test_guessing_one_username_from_many_ips_is_locked(client: AsyncClient) -> None:
     await make_user("operator1", Role.OPERATOR)
+    good = {"username": "operator1", "password": TEST_PASSWORD}
+    # the clinic PC the operator normally uses
+    resp = await client.post("/api/auth/login", json=good, headers={"X-Real-IP": "10.1.1.1"})
+    assert resp.status_code == 200
     bad = {"username": "operator1", "password": "bad"}
     for n in range(5):  # 4 failures per IP stay under the per-IP limit of 5...
         for _ in range(4):
             await client.post("/api/auth/login", json=bad, headers={"X-Real-IP": f"10.0.0.{n}"})
 
-    # ...but 20 failures for the username lock it from any address
-    good = {"username": "operator1", "password": TEST_PASSWORD}
+    # ...but 20 failures for the username lock it from any new address
     resp = await client.post("/api/auth/login", json=good, headers={"X-Real-IP": "10.0.0.99"})
     assert resp.status_code == 429
+    # an attacker can't lock the user out of the PC they already use
+    resp = await client.post("/api/auth/login", json=good, headers={"X-Real-IP": "10.1.1.1"})
+    assert resp.status_code == 200
     other = await client.post("/api/auth/login", json={"username": "someone-else", "password": "x"})
     assert other.status_code == 401  # other accounts are not affected

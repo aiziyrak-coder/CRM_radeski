@@ -22,6 +22,7 @@ from app.modules.catalog.models import Service
 from app.modules.leads.models import Lead
 from app.modules.patients.models import Patient, PatientKind, PatientPhone
 from app.modules.scheduling.models import Appointment, AppointmentStatus
+from app.modules.tasks import rules
 from app.modules.tasks import service as tasks
 from app.modules.tasks.models import TASK_DEFAULTS, Outcome, Task, TaskAttempt, TaskStatus, TaskType
 from app.modules.telephony.models import Call, CallDirection, CallStatus
@@ -252,7 +253,20 @@ async def test_refused_inquiry_closes_its_other_calls(client: AsyncClient, op: d
 # --- generators -------------------------------------------------------------------------------
 
 
-async def test_no_course_or_repeat_call_when_already_booked(
+async def _come_due(type_: TaskType) -> None:
+    async with SessionLocal() as s:
+        await s.execute(update(Task).where(Task.type == type_).values(due_at=clinic_time.now()))
+        await s.commit()
+
+
+async def _close_already_booked() -> int:
+    async with SessionLocal() as s:
+        n = await rules.close_already_booked(s)
+        await s.commit()
+        return n
+
+
+async def test_course_and_repeat_calls_skip_patients_already_booked(
     client: AsyncClient, clinic: dict, op: dict, sup: dict
 ) -> None:
     async with SessionLocal() as s:
@@ -278,19 +292,17 @@ async def test_no_course_or_repeat_call_when_already_booked(
         await client.post(
             f"/api/appointments/{first['id']}/status", json={"status": st}, headers=op
         )
-    assert await tasks_of(TaskType.COURSE_CONTINUE) == []  # the next session is booked
-
     due = (monday + timedelta(days=30)).isoformat()
     rec = {"patient_id": clinic["patient"], "due_date": due}
     assert (await client.post("/api/recommendations", json=rec, headers=sup)).status_code == 201
-    assert await tasks_of(TaskType.REPEAT_VISIT) == []  # already has a visit ahead
+    # the calls exist, but when they come due the next visit is already booked: closed
+    await _come_due(TaskType.COURSE_CONTINUE)
+    await _come_due(TaskType.REPEAT_VISIT)
+    assert await _close_already_booked() == 2
+    assert await tasks_of(TaskType.COURSE_CONTINUE) == []
+    assert await tasks_of(TaskType.REPEAT_VISIT) == []
 
-    # without a booking ahead both calls are created
-    await client.post(
-        f"/api/appointments/{nxt.json()['id']}/status",
-        json={"status": "cancelled", "reason": "price"},
-        headers=op,
-    )
+    # a booking cancelled after the call was created doesn't lose the call
     third = (
         await client.post(
             "/api/appointments",
@@ -302,8 +314,16 @@ async def test_no_course_or_repeat_call_when_already_booked(
         await client.post(
             f"/api/appointments/{third['id']}/status", json={"status": st}, headers=op
         )
-    assert len(await tasks_of(TaskType.COURSE_CONTINUE)) == 1
     assert (await client.post("/api/recommendations", json=rec, headers=sup)).status_code == 201
+    await client.post(
+        f"/api/appointments/{nxt.json()['id']}/status",
+        json={"status": "cancelled", "reason": "price"},
+        headers=op,
+    )
+    await _come_due(TaskType.COURSE_CONTINUE)
+    await _come_due(TaskType.REPEAT_VISIT)
+    assert await _close_already_booked() == 0
+    assert len(await tasks_of(TaskType.COURSE_CONTINUE)) == 1
     assert len(await tasks_of(TaskType.REPEAT_VISIT)) == 1
 
 
@@ -421,6 +441,7 @@ async def test_confirmation_rate_is_confirmed_over_the_days_appointments(
             (9, S.SCHEDULED),
             (10, S.NO_SHOW),
             (11, S.RESCHEDULED),
+            (12, S.ARRIVED),
         ):
             starts = clinic_time.at(today, time(hour))
             appt = Appointment(
@@ -431,20 +452,31 @@ async def test_confirmation_rate_is_confirmed_over_the_days_appointments(
             s.add(appt)
             rows.append(appt)
         await s.flush()
-        # the no-show had confirmed on the phone that morning
-        await tasks.create_task(
-            s, TaskType.CONFIRM_VISIT, due_at=clinic_time.now(), patient_id=rows[2].patient_id,
-            appointment_id=rows[2].id, dedupe_key=f"confirm:{rows[2].id}",
+        # the no-show had confirmed on the phone that morning; the walk-in (12:00) was never
+        # reached — its task was closed when they arrived, which is not a confirmation
+        for appt in (rows[2], rows[4]):
+            await tasks.create_task(
+                s, TaskType.CONFIRM_VISIT, due_at=clinic_time.now(), patient_id=appt.patient_id,
+                appointment_id=appt.id, dedupe_key=f"confirm:{appt.id}",
+            )  # fmt: skip
+        no_show_task = await s.scalar(select(Task).where(Task.appointment_id == rows[2].id))
+        s.add(
+            TaskAttempt(
+                task_id=no_show_task.id, task_type=TaskType.CONFIRM_VISIT,
+                patient_id=rows[2].patient_id, outcome=Outcome.CONFIRMED,
+                created_at=clinic_time.now(),
+            )
         )  # fmt: skip
         await s.execute(
-            update(Task).where(Task.appointment_id == rows[2].id).values(outcome=Outcome.CONFIRMED)
+            update(Task).where(Task.appointment_id == rows[4].id).values(outcome=Outcome.DONE)
         )
         await s.commit()
     await make_user("owner1", Role.OWNER)
     owner = bearer(await login(client, "owner1"))
     params = {"from": today.isoformat(), "to": today.isoformat()}
     kpi = (await client.get("/api/reports/kpi", params=params, headers=owner)).json()
-    assert kpi["confirmation_rate"] == 66.7  # 2 confirmed of 3 (the rescheduled one moved away)
+    # 2 confirmed of 4 (the rescheduled one moved away; the walk-in wasn't confirmed)
+    assert kpi["confirmation_rate"] == 50.0
 
 
 async def test_report_operators_list(client: AsyncClient, op: dict, sup: dict) -> None:

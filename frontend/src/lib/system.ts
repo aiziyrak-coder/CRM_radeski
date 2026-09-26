@@ -2,7 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from './api'
 
 export type SystemStatus = {
-  today: { missed_calls: number; unread_chats: number; leads_sla_breached?: number }
+  today: {
+    missed_calls: number
+    unread_chats: number
+    missed_open?: number
+    leads_sla_breached?: number
+  }
   qa?: { red_flags_open: number }
   integrations?: {
     telephony: boolean

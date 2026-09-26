@@ -39,6 +39,7 @@ from app.modules.telephony.models import UNANSWERED_INBOUND, Call, CallDirection
 
 S = AppointmentStatus
 CONFIRM_TYPES = (TaskType.CONFIRM_VISIT,)
+CALL_NOW_TYPES = (TaskType.NEW_LEAD, TaskType.MISSED_CALL, TaskType.CALLBACK, TaskType.LOST_LEAD)
 # calls about an inquiry itself: pointless once it is lost or booked
 LEAD_TASK_TYPES = (TaskType.NEW_LEAD, TaskType.MISSED_CALL, TaskType.LOST_LEAD)
 BOOKED_AHEAD = (S.SCHEDULED, S.CONFIRMED)
@@ -67,6 +68,47 @@ async def _has_future_visit(
             )
         )
     return await session.scalar(stmt.limit(1)) is not None
+
+
+async def close_already_booked(session: AsyncSession) -> int:
+    """TZ 4.5 #6, #8: a repeat-visit or course call isn't made when that visit is already booked.
+
+    Checked when the call comes due, not when it is created: a booking that is cancelled or
+    missed later then still leaves the patient with a call."""
+    soon = clinic_time.now() + timedelta(days=1)
+    due = await session.scalars(
+        select(Task).where(
+            Task.status == TaskStatus.OPEN,
+            Task.type.in_((TaskType.REPEAT_VISIT, TaskType.COURSE_CONTINUE)),
+            Task.due_at <= soon,
+            Task.patient_id.is_not(None),
+        )
+    )
+    closed = 0
+    for task in list(due):
+        services: list[uuid.UUID | None] = [None]
+        if task.type is TaskType.REPEAT_VISIT and task.recommendation_id:
+            rec = await session.get(Recommendation, task.recommendation_id)
+            if rec is not None and rec.service_id:
+                services = [rec.service_id]
+        elif task.type is TaskType.COURSE_CONTINUE and task.appointment_id:
+            services = list(
+                await session.scalars(
+                    select(AppointmentService.service_id).where(
+                        AppointmentService.appointment_id == task.appointment_id
+                    )
+                )
+            ) or [None]
+        for service_id in services:
+            if await _has_future_visit(
+                session, task.patient_id, exclude=task.appointment_id, service_id=service_id
+            ):
+                task.status, task.outcome = TaskStatus.DONE, Outcome.BOOKED
+                task.completed_at = clinic_time.now()
+                closed += 1
+                break
+    await session.flush()
+    return closed
 
 
 # --- events -----------------------------------------------------------------------------------
@@ -117,8 +159,10 @@ async def _on_status(session: AsyncSession, p: dict[str, Any]) -> None:
     appt: Appointment = p["appointment"]
     new: AppointmentStatus = p["new"]
     if new in (S.CONFIRMED, S.ARRIVED, S.COMPLETED):
+        # a patient who came in without being reached was not "confirmed" (KPI 4.11)
+        outcome = Outcome.CONFIRMED if new is S.CONFIRMED else Outcome.DONE
         await tasks.close_open(
-            session, types=CONFIRM_TYPES, appointment_id=appt.id, outcome=Outcome.CONFIRMED
+            session, types=CONFIRM_TYPES, appointment_id=appt.id, outcome=outcome
         )
     elif new in (S.CANCELLED, S.RESCHEDULED):
         await tasks.close_open(
@@ -167,10 +211,9 @@ async def _after_procedure(session: AsyncSession, appt: Appointment) -> None:
                     Appointment.status == S.COMPLETED,
                 )
             )
-            # TZ 4.5 #8: only when the next session isn't booked yet
-            if (done or 0) < service.course_sessions and not await _has_future_visit(
-                session, appt.patient_id, exclude=appt.id, service_id=service.id
-            ):
+            # TZ 4.5 #8 "only when the next session isn't booked" is checked when the call comes
+            # due (close_already_booked): a booking cancelled later must not lose the call
+            if (done or 0) < service.course_sessions:
                 due = visit_day + timedelta(days=max(service.min_interval_days - 2, 0))
                 await tasks.create_task(
                     session, TaskType.COURSE_CONTINUE, due_at=clinic_time.at(due, time(10)),
@@ -183,9 +226,7 @@ async def _after_procedure(session: AsyncSession, appt: Appointment) -> None:
 @on("recommendation.created")
 async def _on_recommendation(session: AsyncSession, p: dict[str, Any]) -> None:
     rec: Recommendation = p["recommendation"]
-    # TZ 4.5 #6: "if the patient hasn't booked yet"
-    if await _has_future_visit(session, rec.patient_id, exclude=rec.appointment_id):
-        return
+    # TZ 4.5 #6 "if the patient hasn't booked yet" is checked when the call comes due
     lead_days = get_settings().repeat_visit_lead_days
     due = max(clinic_time.at(rec.due_date - timedelta(days=lead_days), time(9)), clinic_time.now())
     await tasks.create_task(
@@ -357,12 +398,17 @@ async def generate_confirmations(session: AsyncSession, day: date | None = None)
 async def generate_lost_leads(session: AsyncSession) -> int:
     """Inquiries that didn't turn into a booking within 24 hours (TZ 4.5 #4)."""
     cutoff = clinic_time.now() - timedelta(hours=get_settings().lost_lead_after_hours)
-    # someone is already due to call this person (e.g. the new-inquiry task is still open)
+    # someone is already due to call this person: the inquiry's own task, or a patient call of
+    # the "call now" kinds (a repeat-visit call months ahead doesn't count)
     has_open = exists().where(
         Task.status == TaskStatus.OPEN,
         or_(
             Task.lead_id == Lead.id,
-            and_(Lead.patient_id.is_not(None), Task.patient_id == Lead.patient_id),
+            and_(
+                Lead.patient_id.is_not(None),
+                Task.patient_id == Lead.patient_id,
+                Task.type.in_(CALL_NOW_TYPES),
+            ),
         ),
     )
     rows = await session.scalars(

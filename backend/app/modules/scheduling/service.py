@@ -158,19 +158,25 @@ async def working_windows(
 
 
 async def _busy(
-    session: AsyncSession, column, ids: list[uuid.UUID], start: datetime, end: datetime
+    session: AsyncSession,
+    column,
+    ids: list[uuid.UUID],
+    start: datetime,
+    end: datetime,
+    exclude_id: uuid.UUID | None = None,
 ) -> dict[uuid.UUID, list[tuple[datetime, datetime]]]:
     busy: dict[uuid.UUID, list[tuple[datetime, datetime]]] = {i: [] for i in ids}
     if not ids:
         return busy
-    rows = await session.execute(
-        select(column, Appointment.starts_at, Appointment.ends_at).where(
-            column.in_(ids),
-            Appointment.status.in_(ACTIVE_STATUSES),
-            Appointment.starts_at < end,
-            Appointment.ends_at > start,
-        )
+    stmt = select(column, Appointment.starts_at, Appointment.ends_at).where(
+        column.in_(ids),
+        Appointment.status.in_(ACTIVE_STATUSES),
+        Appointment.starts_at < end,
+        Appointment.ends_at > start,
     )
+    if exclude_id:  # a reschedule frees its own time (moving by 15 minutes is allowed)
+        stmt = stmt.where(Appointment.id != exclude_id)
+    rows = await session.execute(stmt)
     for key, s, e in rows:
         busy[key].append((s, e))
     return busy
@@ -274,11 +280,13 @@ async def find_slots(
     if device and not devices:
         raise SchedulingError("no_device")
     doctor_busy = await _busy(
-        session, Appointment.doctor_id, [d.id for d in doctors], horizon_start, horizon_end
-    )
+        session, Appointment.doctor_id, [d.id for d in doctors], horizon_start, horizon_end,
+        exclude_appointment_id,
+    )  # fmt: skip
     device_busy = await _busy(
-        session, Appointment.resource_id, [r.id for r in devices], horizon_start, horizon_end
-    )
+        session, Appointment.resource_id, [r.id for r in devices], horizon_start, horizon_end,
+        exclude_appointment_id,
+    )  # fmt: skip
 
     slots: list[Slot] = []
     for offset in range(days):
@@ -348,7 +356,10 @@ async def create_appointment(
     if branch is None or not branch.is_active:
         raise SchedulingError("branch_not_found")
     services = await load_services(session, service_ids)
-    if not await eligible_doctors(session, services, doctor.id):
+    # moving a visit to another time with the same doctor keeps what was agreed, even if the
+    # catalog changed since or the visit was booked with an override
+    same_doctor = rescheduled_from is not None and rescheduled_from.doctor_id == doctor.id
+    if not same_doctor and not await eligible_doctors(session, services, doctor.id):
         raise SchedulingError("doctor_not_eligible")
     if starts_at.tzinfo is None:
         raise SchedulingError("timezone_required")
@@ -357,7 +368,7 @@ async def create_appointment(
             select(DoctorSchedule.branch_id).where(DoctorSchedule.doctor_id == doctor.id)
         )
     )
-    if branches and branch_id not in branches:
+    if branches and branch_id not in branches and not same_doctor:
         # a doctor with a timetable works only at its branches (even with an hours override)
         raise SchedulingError("doctor_not_at_branch")
     ends_at = starts_at + total_duration(services)

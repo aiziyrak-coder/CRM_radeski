@@ -1,7 +1,9 @@
 """Brute-force protection for both login steps, backed by Redis.
 
 Password step: failures are counted per (username, IP) and, with a higher threshold, per
-username across all IPs. A correct password clears only the per-IP counter.
+username across all IPs. A correct password clears only the per-IP counter. The per-username
+lock does not apply to addresses this user has logged in from before (30 days): otherwise anyone
+could keep the admin locked out by sending 20 wrong passwords every 15 minutes.
 
 Authenticator step: failures are counted per user id, independently of the password counters,
 so knowing the password doesn't allow unlimited code guessing by logging in again. Only a
@@ -21,6 +23,13 @@ def _key(username: str, ip: str) -> str:
 
 def _user_key(username: str) -> str:
     return f"login-fail-user:{username.lower()}"
+
+
+def _trusted_key(username: str, ip: str) -> str:
+    return f"login-ok:{username.lower()}:{ip}"
+
+
+TRUSTED_TTL = 30 * 86400
 
 
 def _totp_key(user_id: uuid.UUID) -> str:
@@ -55,10 +64,11 @@ async def is_locked(username: str, ip: str) -> bool:
     settings = get_settings()
     redis = _redis()
     try:
-        return (
-            await _count(redis, _key(username, ip)) >= settings.login_max_attempts
-            or await _count(redis, _user_key(username)) >= settings.login_max_attempts_per_user
-        )
+        if await _count(redis, _key(username, ip)) >= settings.login_max_attempts:
+            return True
+        if await redis.exists(_trusted_key(username, ip)):
+            return False
+        return await _count(redis, _user_key(username)) >= settings.login_max_attempts_per_user
     finally:
         await redis.aclose()
 
@@ -75,10 +85,12 @@ async def register_failure(username: str, ip: str) -> None:
 
 async def reset(username: str, ip: str) -> None:
     """After a correct password. The per-username counter only expires (an attacker spreading
-    guesses over many IPs must not be able to clear it with one legitimate login)."""
+    guesses over many IPs must not be able to clear it with one legitimate login); this address
+    becomes trusted for the user."""
     redis = _redis()
     try:
         await redis.delete(_key(username, ip))
+        await redis.set(_trusted_key(username, ip), 1, ex=TRUSTED_TTL)
     finally:
         await redis.aclose()
 

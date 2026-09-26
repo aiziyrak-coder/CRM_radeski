@@ -344,7 +344,7 @@ async def test_reports_count_calls(client: AsyncClient, clinic: dict) -> None:
 
 
 async def test_call_without_hangup_report_is_closed_as_missed(client: AsyncClient) -> None:
-    long_ago = int(systime.time()) - 3 * 3600
+    long_ago = int(systime.time()) - 5 * 3600  # past the 4-hour ringing timeout
     await event(client, kind="ring", call_id="800.1", caller="998935550077", started=long_ago)
     await event(client, kind="ring", call_id="800.2", caller="998935550078")  # still in the queue
     async with SessionLocal() as s:

@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.core.db import SessionLocal
 from app.core.text import search_key
 from app.modules.audit.models import AuditLog
-from app.modules.catalog.models import Branch, Doctor
+from app.modules.catalog.models import Branch, Doctor, DoctorService
 from app.modules.patients.models import Patient, PatientKind, PatientPhone
 from app.modules.users.models import Role
 from tests.conftest import bearer, login, make_user
@@ -462,3 +462,27 @@ async def test_absences_are_audited(client: AsyncClient, clinic: dict) -> None:
             await s.scalars(select(AuditLog.action).where(AuditLog.entity_id == clinic["d1"]))
         )
     assert sorted(actions) == ["schedule.absence_add", "schedule.absence_delete"]
+
+
+async def test_reschedule_keeps_the_doctor_even_if_the_catalog_changed(
+    client: AsyncClient, clinic: dict, op: dict
+) -> None:
+    day = next_monday()
+    appt = (
+        await client.post("/api/appointments", json=booking(clinic, at(day, 9)), headers=op)
+    ).json()
+    # later the site sync links the service to another doctor only
+    async with SessionLocal() as s:
+        s.add(
+            DoctorService(
+                doctor_id=uuid.UUID(clinic["d2"]), service_id=uuid.UUID(clinic["consult"])
+            )
+        )
+        await s.commit()
+
+    url = f"/api/appointments/{appt['id']}/reschedule"
+    moved = await client.post(url, json={"starts_at": at(day, 10)}, headers=op)
+    assert moved.status_code == 200, moved.text  # same doctor: what was agreed stands
+    # but a new booking with that doctor follows the catalog
+    fresh = await client.post("/api/appointments", json=booking(clinic, at(day, 11)), headers=op)
+    assert fresh.status_code == 409 and fresh.json()["detail"] == "doctor_not_eligible"

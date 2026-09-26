@@ -1,5 +1,5 @@
 // Call-center operations: task queue, leads, scripts, campaigns, reports (phase 2).
-import { api, ApiError, getAccessToken, refreshSession, type Language } from './api'
+import { api, apiBlob, type Language } from './api'
 import type { PatientKind, Source } from './patients'
 
 export type TaskType =
@@ -311,24 +311,8 @@ export const getReportOperators = () => api<{ id: string; full_name: string }[]>
 
 /** Excel export needs the bearer token, so it's fetched and saved as a blob. */
 export async function downloadKpi(from: string, to: string) {
-  const load = () =>
-    fetch(`/api/reports/kpi.xlsx?from=${from}&to=${to}`, {
-      headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
-      credentials: 'include',
-    })
-  let resp = await load()
-  if (resp.status === 401 && (await refreshSession())) resp = await load()
-  if (!resp.ok) {
-    let code = `http_${resp.status}`
-    try {
-      const body = (await resp.json()) as { detail?: unknown }
-      if (typeof body.detail === 'string') code = body.detail
-    } catch {
-      // non-JSON error body
-    }
-    throw new ApiError(resp.status, code)
-  }
-  const url = URL.createObjectURL(await resp.blob())
+  const blob = await apiBlob(`/reports/kpi.xlsx?from=${from}&to=${to}`)
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = `kpi_${from}_${to}.xlsx`

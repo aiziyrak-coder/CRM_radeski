@@ -132,3 +132,17 @@ export async function api<T>(
   if (resp.status === 204) return undefined as T
   return (await resp.json()) as T
 }
+
+/** A file download (Excel, audio) with the same session handling and error codes as `api`. */
+export async function apiBlob(path: string, retry = true): Promise<Blob> {
+  const resp = await fetch(`/api${path}`, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    credentials: 'include',
+  })
+  if (resp.status === 401 && retry) {
+    if (await refreshSession()) return apiBlob(path, false)
+    onSessionExpired?.()
+  }
+  if (!resp.ok) throw await parseError(resp)
+  return resp.blob()
+}

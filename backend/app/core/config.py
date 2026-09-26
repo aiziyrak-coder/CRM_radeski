@@ -59,7 +59,9 @@ class Settings(BaseSettings):
     recordings_dir: str = "/recordings"
     # a call still "ringing" this long lost its hangup report: closed as missed by a beat job
     # (answered calls stay "ringing" until hangup, so keep this above the longest conversation)
-    pbx_ringing_timeout_minutes: int = 60
+    # a call still "ringing" this long lost its hangup report (answered calls have no separate
+    # event, so this must exceed the longest real conversation)
+    pbx_ringing_timeout_minutes: int = 240
 
     # Messaging (phase 5). Public address of the CRM, used for webhooks and SMS status callbacks
     public_url: str = "https://crm.radeski.uz"

@@ -212,10 +212,14 @@ async def kpi(session: AsyncSession, date_from: date, date_to: date) -> dict[str
     # TZ 4.11 "Tasdiqlash %": confirmed / the day's appointments. Days up to today only (future
     # visits aren't due for confirmation yet); a rescheduled visit lives on as its new booking.
     _, end_of_today = clinic_time.day_bounds(clinic_time.today())
+    # a real confirmation: an operator's "confirmed" call result (a patient who simply walked in
+    # closes the confirmation task too, but nobody confirmed anything)
     confirm_task = exists().where(
         Task.appointment_id == Appointment.id,
         Task.type == TaskType.CONFIRM_VISIT,
-        Task.outcome == Outcome.CONFIRMED,
+        TaskAttempt.task_id == Task.id,
+        TaskAttempt.outcome == Outcome.CONFIRMED,
+        TaskAttempt.automatic.is_(False),
     )
     day_appts = (
         select(

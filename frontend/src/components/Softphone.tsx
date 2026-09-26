@@ -118,7 +118,7 @@ function Caller({ number }: { number: string }) {
     return (
       <div className="text-sm">
         <Link to={`/patients/${data.patient.id}`} className="font-medium text-teal-800 hover:underline">
-          {data.patient.full_name}
+          {data.patient.full_name === UNKNOWN_NAME ? t('patients.tagNoName') : data.patient.full_name}
         </Link>
         <div className="text-xs text-slate-600">
           {t(`kinds.${data.patient.kind}`)}
@@ -269,7 +269,8 @@ export function CallPanel() {
   const call = phone.call
   const dialog =
     booking && bookingPatient.data ? (
-      <BookingDialog patient={bookingPatient.data} onClose={() => setBooking(null)} />
+      // keyed: booking for the next caller must not reuse the previous caller's form
+      <BookingDialog key={booking} patient={bookingPatient.data} onClose={() => setBooking(null)} />
     ) : null
   if (!call && phone.error) {
     return (

@@ -30,8 +30,10 @@ export default function AlertsBell() {
   const items = (
     [
       ['sla', data.today.leads_sla_breached ?? 0, '/leads'],
-      ['redFlags', data.qa?.red_flags_open ?? 0, '/qa'],
-      ['missed', data.today.missed_calls, '/calls'],
+      // only supervisor and admin can mark flags reviewed; the owner sees them in QA
+      ['redFlags', user.role === 'owner' ? 0 : (data.qa?.red_flags_open ?? 0), '/qa'],
+      // callbacks still to make, not every missed call of the day
+      ['missed', data.today.missed_open ?? 0, '/tasks'],
     ] as const
   ).filter(([, n, path]) => n > 0 && canOpen(user.role, path))
   const total = items.reduce((sum, [, n]) => sum + n, 0)
