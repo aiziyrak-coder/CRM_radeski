@@ -35,6 +35,7 @@ build-backend = "setuptools.build_meta"
 include = ["app*"]
 
 [tool.ruff]
+extend-exclude = ["build"]  # `pip install .` in CI leaves a copy of the sources there
 line-length = 100
 target-version = "py312"
 
