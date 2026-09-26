@@ -40,15 +40,17 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 }
 
 const control =
-  'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none ' +
+  'rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none ' +
   'focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20'
+// full width unless the caller sets a width (w-40, md:w-56, ...)
+const width = (className?: string) => (/(^|\s|:)w-/.test(className ?? '') ? '' : 'w-full')
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={cx(control, props.className)} />
+  return <input {...props} className={cx(control, width(props.className), props.className)} />
 }
 
 export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={cx(control, props.className)} />
+  return <select {...props} className={cx(control, width(props.className), props.className)} />
 }
 
 export function Card({
@@ -104,4 +106,41 @@ export function ErrorText({ error }: { error: unknown }) {
 
 export function Notice({ children }: { children: ReactNode }) {
   return <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{children}</p>
+}
+
+export function Modal({
+  title,
+  onClose,
+  children,
+  wide,
+}: {
+  title: string
+  onClose: () => void
+  children: ReactNode
+  wide?: boolean
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-8"
+      role="dialog"
+      aria-modal="true"
+    >
+      <button className="fixed inset-0 bg-slate-900/40" aria-label="close" onClick={onClose} />
+      <section
+        className={cx('relative w-full rounded-lg bg-white shadow-xl', wide ? 'max-w-3xl' : 'max-w-lg')}
+      >
+        <header className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+          <h2 className="text-base font-semibold">{title}</h2>
+          <button
+            className="rounded p-1 text-slate-500 hover:bg-slate-100"
+            aria-label="close"
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        </header>
+        <div className="p-5">{children}</div>
+      </section>
+    </div>
+  )
 }

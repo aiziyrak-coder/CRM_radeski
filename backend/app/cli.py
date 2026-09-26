@@ -87,6 +87,16 @@ async def _sync_diagnoses() -> None:
         print(f"  {key:30} {value}")
 
 
+async def _sync_catalog() -> None:
+    from app.modules.catalog.sync import sync_from_site
+
+    async with SessionLocal() as session:
+        counts = await sync_from_site(session)
+        await session.commit()
+    for key, value in sorted(counts.items()):
+        print(f"  {key:30} {value}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -103,11 +113,14 @@ def main() -> None:
         "--report", help="muammoli qatorlar CSV fayli (standart: <dir>/import-problems.csv)"
     )
 
+    sub.add_parser("sync-catalog", help="filial, shifokor va xizmatlarni radeski.uz'dan olish")
     sub.add_parser("sync-diagnoses", help="tashxislar uchun toifa takliflarini yangilash")
 
     args = parser.parse_args()
     if args.command == "create-user":
         asyncio.run(_create_user(args))
+    elif args.command == "sync-catalog":
+        asyncio.run(_sync_catalog())
     elif args.command == "sync-diagnoses":
         asyncio.run(_sync_diagnoses())
     elif args.command == "import-legacy":

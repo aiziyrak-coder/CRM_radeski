@@ -16,7 +16,7 @@ Claude Code bilan ishlash tartibi: bitta sessiyada bitta vazifa (masalan, "0.3 �
 | 0.4 ✅ | **Import skripti**: asosiy fayl, 7 ta tuman fayli, psoriaz/vitiligo fayli, `nomer.xlsx`. F.I.Sh. katagini ajratish, xatolar hisoboti | ~6 700 bemor va ~47 500 sovuq raqam import qilinadi. Xato qatorlar alohida CSV'ga chiqadi. Qayta ishga tushirilsa dublikat yaratilmaydi |
 | 0.5 ✅ | **Tashxislarni normallashtirish**: ~1 700 xil yozuv → qoidalar (kalit so'z + MKB) toifa taklif qiladi (98% qamrov) → "Tashxislar" sahifasida shifokor tasdiqlaydi → bemorlarga qo'llanadi | Shifokor jadvalni ko'rib tasdiqlaydi. Bemorlar toifa bo'yicha filtrlanadi |
 | 0.5b | Qoidalar tanimagan ~160 matn uchun OpenAI taklifi (kalit berilgach) | Qolgan matnlarga AI toifa taklif qiladi, shifokor tasdiqlaydi |
-| 0.6 | Katalogni radeski.uz'dan sinxronlash (filiallar, shifokorlar, yo'nalishlar, 806 narx) va qo'shimcha maydonlar formasi | Tungi sinxronizatsiya ishlaydi. Davomiylik va resurs qo'lda to'ldiriladi |
+| 0.6 ✅ | Katalogni radeski.uz'dan sinxronlash (filiallar, shifokorlar, yo'nalishlar, 806 narx) va qo'shimcha maydonlar formasi | Tungi sinxronizatsiya ishlaydi. Davomiylik va resurs qo'lda to'ldiriladi |
 
 **Natija**: tozalangan va segmentlangan baza. Buni klinikaga darhol ko'rsatish mumkin, masalan: "trixologga tegishli alopesiyali 850 bemor".
 
@@ -24,11 +24,11 @@ Claude Code bilan ishlash tartibi: bitta sessiyada bitta vazifa (masalan, "0.3 �
 
 | # | Vazifa | Qabul mezoni |
 |---|---|---|
-| 1.1 | Kabinetlar, apparatlar, shifokor grafiklari, ta'tillar | Ikkala filial uchun grafik kiritilgan |
-| 1.2 | Yozuv modeli, statuslar, `EXCLUDE` cheklovi (double-booking), ko'chirish va bekor qilish (sababi bilan) | Bir vaqtga ikki marta yozish imkonsiz. Ko'chirilgan yozuv tarixda saqlanadi |
-| 1.3 | Bo'sh vaqt topuvchi | Xizmat tanlanganda 3 ta variant chiqadi. Lazer apparati bandligi va kurs intervali hisobga olinadi |
-| 1.4 | Jadval UI: kunlik ko'rinish, shifokor yoki resurs ustunlari, filtrlar, yozuvni tez yaratish | Registrator 30 soniya ichida yozuv yaratadi |
-| 1.5 | Registrator ekrani ("keldi/kelmadi") va shifokor ekrani ("keyingi qabul" tavsiyasi) | Tavsiya kiritilganda bemor kartasida ko'rinadi |
+| 1.1 ✅ | Kabinetlar, apparatlar, shifokor grafiklari, ta'tillar | Ikkala filial uchun grafik kiritilgan |
+| 1.2 ✅ | Yozuv modeli, statuslar, `EXCLUDE` cheklovi (double-booking), ko'chirish va bekor qilish (sababi bilan) | Bir vaqtga ikki marta yozish imkonsiz. Ko'chirilgan yozuv tarixda saqlanadi |
+| 1.3 ✅ | Bo'sh vaqt topuvchi | Xizmat tanlanganda 3 ta variant chiqadi. Lazer apparati bandligi va kurs intervali hisobga olinadi |
+| 1.4 ✅ | Jadval UI: kunlik ko'rinish, shifokor yoki resurs ustunlari, filtrlar, yozuvni tez yaratish | Registrator 30 soniya ichida yozuv yaratadi |
+| 1.5 ✅ | Registrator ekrani ("keldi/kelmadi") va shifokor ekrani ("keyingi qabul" tavsiyasi) | Tavsiya kiritilganda bemor kartasida ko'rinadi |
 
 ## 2-bosqich. Operator ish joyi (~2 hafta)
 

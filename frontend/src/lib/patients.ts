@@ -133,3 +133,22 @@ export function formatDate(iso: string | null): string {
   const [y, m, d] = iso.slice(0, 10).split('-')
   return `${d}.${m}.${y}`
 }
+
+/** ISO timestamp -> '12.04.2026 14:30' in the clinic time zone */
+export function formatDateTime(iso: string | null): string {
+  if (!iso) return '—'
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Tashkent',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(new Date(iso))
+      .map((p) => [p.type, p.value]),
+  )
+  return `${parts.day}.${parts.month}.${parts.year} ${parts.hour}:${parts.minute}`
+}

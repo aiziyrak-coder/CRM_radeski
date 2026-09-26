@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button, Card, ErrorText } from '../components/ui'
 import { api } from '../lib/api'
+import { formatDateTime } from '../lib/patients'
 
 type AuditItem = {
   id: string
@@ -37,14 +38,13 @@ function describeChange(item: AuditItem): string {
 }
 
 export default function AuditPage() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const [offset, setOffset] = useState(0)
   const { data, error } = useQuery({
     queryKey: ['audit', offset],
     queryFn: () => api<AuditPage>(`/audit?limit=${PAGE}&offset=${offset}`),
     placeholderData: keepPreviousData,
   })
-  const locale = i18n.language === 'ru' ? 'ru-RU' : 'uz-UZ'
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -83,7 +83,7 @@ export default function AuditPage() {
             {data?.items.map((item) => (
               <tr key={item.id} className="border-t border-slate-100 align-top">
                 <td className="py-2 pr-4 whitespace-nowrap text-slate-600">
-                  {new Date(item.created_at).toLocaleString(locale)}
+                  {formatDateTime(item.created_at)}
                 </td>
                 <td className="py-2 pr-4">{item.user_name ?? t('audit.system')}</td>
                 <td className="py-2 pr-4">

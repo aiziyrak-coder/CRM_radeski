@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, useLocation, useParams } from 'react-router'
+import { StatusPill } from '../components/AppointmentPanel'
+import BookingDialog from '../components/BookingDialog'
 import PatientForm from '../components/PatientForm'
 import PatientName from '../components/PatientName'
 import PatientTags from '../components/PatientTags'
@@ -9,6 +11,7 @@ import PatientRow from '../components/PatientRow'
 import { Badge, Button, Card, ErrorText, Field, Input, Notice } from '../components/ui'
 import { useAuth } from '../lib/auth-context'
 import { categoryName, getCategories } from '../lib/diagnoses'
+import { clinicDate, clinicTime, getPatientAppointments, getPatientRecommendations } from '../lib/scheduling'
 import {
   addPhone,
   deletePhone,
@@ -93,6 +96,56 @@ function Details({ patient }: { patient: Patient }) {
           </div>
         )}
       </dl>
+    </Card>
+  )
+}
+
+function Visits({ patient }: { patient: Patient }) {
+  const { t, i18n } = useTranslation()
+  const { data: visits = [] } = useQuery({
+    queryKey: ['appointments', 'patient', patient.id],
+    queryFn: () => getPatientAppointments(patient.id),
+  })
+  const { data: recs = [] } = useQuery({
+    queryKey: ['appointments', 'recommendations', patient.id],
+    queryFn: () => getPatientRecommendations(patient.id),
+  })
+  return (
+    <Card title={t('visits.title')}>
+      {visits.length === 0 ? (
+        <p className="text-sm text-slate-500">{t('visits.none')}</p>
+      ) : (
+        <ul className="divide-y divide-slate-100 text-sm">
+          {visits.map((a) => (
+            <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <span>
+                <span className="tabular-nums">
+                  {formatDate(clinicDate(a.starts_at))} {clinicTime(a.starts_at)}
+                </span>{' '}
+                · {a.doctor_name} ·{' '}
+                {a.services.map((s) => (i18n.language === 'ru' ? s.name_ru : s.name_uz)).join(', ')}
+              </span>
+              <StatusPill status={a.status} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {recs.length > 0 && (
+        <div className="mt-4">
+          <h3 className="mb-1 text-sm font-medium">{t('recommendations.title')}</h3>
+          <ul className="space-y-1 text-sm">
+            {recs.map((r) => (
+              <li key={r.id}>
+                {t('recommendations.due')}: <span className="tabular-nums">{formatDate(r.due_date)}</span>
+                {r.note && <span className="text-slate-600"> — {r.note}</span>}{' '}
+                <Badge tone={r.status === 'open' ? 'info' : 'neutral'}>
+                  {t(`recommendations.${r.status}`)}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Card>
   )
 }
@@ -331,6 +384,7 @@ export default function PatientCardPage() {
   const { user } = useAuth()
   const location = useLocation()
   const redirectedFromMerge = Boolean((location.state as { mergedFrom?: string } | null)?.mergedFrom)
+  const [booking, setBooking] = useState(false)
   const { data: patient, error } = useQuery({ queryKey: ['patient', id], queryFn: () => getPatient(id) })
 
   if (error) return <ErrorText error={error} />
@@ -339,6 +393,7 @@ export default function PatientCardPage() {
     return <Navigate to={`/patients/${patient.merged_into_id}`} replace state={{ mergedFrom: patient.id }} />
   }
   const canMerge = user?.role === 'supervisor' || user?.role === 'admin'
+  const canBook = ['operator', 'supervisor', 'registrar', 'admin'].includes(user?.role ?? '')
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -357,8 +412,14 @@ export default function PatientCardPage() {
         <p className="mt-1 text-sm text-slate-500">
           {t('patients.created')}: {formatDate(patient.created_at)}
         </p>
+        {canBook && (
+          <Button className="mt-3" onClick={() => setBooking(true)}>
+            {t('booking.title')}
+          </Button>
+        )}
       </div>
 
+      {booking && <BookingDialog patient={patient} onClose={() => setBooking(false)} />}
       {redirectedFromMerge && <Notice>{t('patients.mergedRedirect')}</Notice>}
       {patient.kind === 'legacy' && (
         <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">{t('patients.legacyNote')}</p>
@@ -368,9 +429,7 @@ export default function PatientCardPage() {
         <div className="space-y-6 lg:col-span-2">
           <Details patient={patient} />
           <Conditions patient={patient} />
-          <Card title={t('patients.history')}>
-            <p className="text-sm text-slate-500">{t('patients.historySoon')}</p>
-          </Card>
+          <Visits patient={patient} />
         </div>
         <div className="space-y-6">
           <Phones patient={patient} />

@@ -6,10 +6,13 @@ import { NAV_ITEMS, type NavItem } from './lib/navigation'
 import AuditPage from './pages/AuditPage'
 import DiagnosesPage from './pages/DiagnosesPage'
 import HomePage from './pages/HomePage'
+import MyDayPage from './pages/MyDayPage'
 import PatientCardPage from './pages/PatientCardPage'
 import PatientsPage from './pages/PatientsPage'
 import LoginPage from './pages/LoginPage'
 import ProfilePage from './pages/ProfilePage'
+import SchedulePage from './pages/SchedulePage'
+import SettingsPage from './pages/SettingsPage'
 import SoonPage from './pages/SoonPage'
 import UsersPage from './pages/UsersPage'
 
@@ -20,6 +23,9 @@ const PAGES: Record<string, ReactNode> = {
   '/profile': <ProfilePage />,
   '/patients': <PatientsPage />,
   '/diagnoses': <DiagnosesPage />,
+  '/schedule': <SchedulePage />,
+  '/my-day': <MyDayPage />,
+  '/settings': <SettingsPage />,
 }
 
 // detail pages inherit the roles of their menu section

@@ -5,13 +5,10 @@ import { Badge, Button, Card, ErrorText, Field, Input, Notice, Select } from '..
 import { api, type Language, type Role, type User } from '../lib/api'
 import { useAuth } from '../lib/auth-context'
 import { ROLES } from '../lib/navigation'
+import { formatDateTime } from '../lib/patients'
 
 type Draft = { username: string; full_name: string; role: Role; language: Language; password: string }
 const EMPTY: Draft = { username: '', full_name: '', role: 'operator', language: 'uz', password: '' }
-
-function formatDate(iso: string | null, locale: string) {
-  return iso ? new Date(iso).toLocaleString(locale === 'ru' ? 'ru-RU' : 'uz-UZ') : null
-}
 
 function CreateUserForm({ onDone }: { onDone: () => void }) {
   const { t } = useTranslation()
@@ -91,7 +88,7 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
 }
 
 function UserRow({ user, isSelf }: { user: User; isSelf: boolean }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [resetting, setResetting] = useState(false)
   const [newPassword, setNewPassword] = useState('')
@@ -137,7 +134,7 @@ function UserRow({ user, isSelf }: { user: User; isSelf: boolean }) {
           </Badge>
         </td>
         <td className="py-3 pr-4 text-sm text-slate-600">
-          {formatDate(user.last_login_at, i18n.language) ?? t('users.never')}
+          {user.last_login_at ? formatDateTime(user.last_login_at) : t('users.never')}
         </td>
         <td className="py-3 text-right whitespace-nowrap">
           <Button variant="ghost" onClick={() => setResetting((v) => !v)}>
