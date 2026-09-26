@@ -39,8 +39,17 @@ export type PatientListItem = {
   district: string | null
   kind: PatientKind
   do_not_call: boolean
+  tags: string[]
   last_visit_at: string | null
   phones: Phone[]
+}
+
+export type Condition = {
+  id: string
+  raw_text: string
+  category_code: string | null
+  visit_type: 'first' | 'repeat' | null
+  source: string
 }
 
 export type Patient = PatientListItem & {
@@ -48,8 +57,8 @@ export type Patient = PatientListItem & {
   address: string | null
   language: Language
   source: Source | null
-  tags: string[]
   notes: string | null
+  conditions: Condition[]
   do_not_call_reason: string | null
   merged_into_id: string | null
   created_at: string
@@ -108,6 +117,13 @@ export const mergePatients = (targetId: string, sourceId: string) =>
   api<Patient>(`/patients/${targetId}/merge`, { method: 'POST', body: { source_id: sourceId } })
 
 export const getDistricts = () => api<string[]>('/patients/meta/districts')
+
+// set by the legacy importer (backend app/importer/legacy.py)
+export const UNKNOWN_NAME = "Ismi noma'lum"
+export const TAG_LABELS: Record<string, string> = {
+  'tekshirish-kerak': 'patients.tagCheck',
+  ismsiz: 'patients.tagNoName',
+}
 
 /** '1985-04-12' -> '12.04.1985' */
 export function formatDate(iso: string | null): string {

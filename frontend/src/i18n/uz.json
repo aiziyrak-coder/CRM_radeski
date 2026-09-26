@@ -134,7 +134,7 @@
   "patients": {
     "title": "Bemorlar",
     "search": "Ism yoki telefon bo'yicha qidirish (kirill yoki lotin)",
-    "allKinds": "Barcha turlar",
+    "allKinds": "Barchasi (sovuq bazasiz)",
     "new": "Yangi bemor",
     "empty": "Hech narsa topilmadi",
     "total": "Topildi: {{count}}",
@@ -179,7 +179,14 @@
     "mergeConfirm": "\"{{name}}\" kartasini shu kartaga birlashtirasizmi? Bu amalni qaytarib bo'lmaydi.",
     "merged": "Karta birlashtirildi",
     "mergedRedirect": "Bu karta boshqa kartaga birlashtirilgan — asosiy kartaga o'tildi.",
-    "details": "Ma'lumotlar"
+    "details": "Ma'lumotlar",
+    "conditions": "Tashxislar (eski bazadan)",
+    "noConditions": "Tashxis yozilmagan",
+    "visitFirst": "birlamchi",
+    "visitRepeat": "qayta",
+    "tagCheck": "Ma'lumotni tekshirish kerak",
+    "tagNoName": "Ismi yo'q",
+    "legacyNote": "Eski bazadan import qilingan. Qo'ng'iroqda ma'lumotlarni aniqlab, kartani to'ldiring."
   },
   "kinds": {
     "active": "Faol bemor",

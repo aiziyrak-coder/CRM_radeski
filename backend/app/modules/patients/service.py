@@ -123,6 +123,7 @@ async def create_patient(
         kind=kind,
         created_by=created_by,
         phones=_phones(data.phones),
+        conditions=[],  # initialized so serializing never triggers a lazy load
     )
     session.add(patient)
     await session.flush()
@@ -175,6 +176,9 @@ def _search_query(q: str | None, kind: PatientKind | None) -> tuple[Select, Any]
     if kind:
         stmt = stmt.where(Patient.kind == kind)
     if not q or not q.strip():
+        if not kind:
+            # the cold base is ~45k nameless numbers; browse it only when asked for explicitly
+            stmt = stmt.where(Patient.kind != PatientKind.COLD)
         return stmt, order
 
     if digits := phone_digits_query(q):
@@ -243,6 +247,10 @@ async def merge(session: AsyncSession, target: Patient, source: Patient) -> None
             phone.is_primary = False
             target.phones.append(phone)
             known.add(phone.number)
+
+    for condition in list(source.conditions):
+        source.conditions.remove(condition)
+        target.conditions.append(condition)
 
     for hook in MERGE_HOOKS:
         await hook(session, target.id, source.id)

@@ -3,6 +3,8 @@ import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, Navigate, useLocation, useParams } from 'react-router'
 import PatientForm from '../components/PatientForm'
+import PatientName from '../components/PatientName'
+import PatientTags from '../components/PatientTags'
 import PatientRow from '../components/PatientRow'
 import { Badge, Button, Card, ErrorText, Field, Input, Notice } from '../components/ui'
 import { useAuth } from '../lib/auth-context'
@@ -90,6 +92,31 @@ function Details({ patient }: { patient: Patient }) {
           </div>
         )}
       </dl>
+    </Card>
+  )
+}
+
+function Conditions({ patient }: { patient: Patient }) {
+  const { t } = useTranslation()
+  if (patient.conditions.length === 0 && patient.kind !== 'legacy') return null
+  return (
+    <Card title={t('patients.conditions')}>
+      {patient.conditions.length === 0 ? (
+        <p className="text-sm text-slate-500">{t('patients.noConditions')}</p>
+      ) : (
+        <ul className="space-y-1 text-sm">
+          {patient.conditions.map((c) => (
+            <li key={c.id}>
+              {c.raw_text}
+              {c.visit_type && (
+                <span className="ml-2 text-xs text-slate-500">
+                  ({t(c.visit_type === 'first' ? 'patients.visitFirst' : 'patients.visitRepeat')})
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   )
 }
@@ -305,9 +332,12 @@ export default function PatientCardPage() {
           ← {t('patients.back')}
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold">{patient.full_name}</h1>
+          <h1 className="text-2xl font-semibold">
+            <PatientName name={patient.full_name} />
+          </h1>
           <Badge tone={patient.kind === 'active' ? 'good' : 'neutral'}>{t(`kinds.${patient.kind}`)}</Badge>
           {patient.do_not_call && <Badge tone="bad">{t('patients.dnc')}</Badge>}
+          <PatientTags tags={patient.tags} />
         </div>
         <p className="mt-1 text-sm text-slate-500">
           {t('patients.created')}: {formatDate(patient.created_at)}
@@ -315,10 +345,14 @@ export default function PatientCardPage() {
       </div>
 
       {redirectedFromMerge && <Notice>{t('patients.mergedRedirect')}</Notice>}
+      {patient.kind === 'legacy' && (
+        <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">{t('patients.legacyNote')}</p>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <Details patient={patient} />
+          <Conditions patient={patient} />
           <Card title={t('patients.history')}>
             <p className="text-sm text-slate-500">{t('patients.historySoon')}</p>
           </Card>

@@ -100,6 +100,16 @@ class MergeIn(BaseModel):
     source_id: uuid.UUID
 
 
+class ConditionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    raw_text: str
+    category_code: str | None
+    visit_type: str | None
+    source: str
+
+
 class _PrimaryPhoneFirst(BaseModel):
     @field_validator("phones", check_fields=False)
     @classmethod
@@ -128,6 +138,7 @@ class PatientOut(_PrimaryPhoneFirst):
     merged_into_id: uuid.UUID | None
     created_at: datetime
     phones: list[PhoneOut]
+    conditions: list[ConditionOut]
 
 
 class PatientListItem(_PrimaryPhoneFirst):
@@ -139,6 +150,7 @@ class PatientListItem(_PrimaryPhoneFirst):
     district: str | None
     kind: PatientKind
     do_not_call: bool
+    tags: list[str]
     last_visit_at: datetime | None
     phones: list[PhoneOut]
 

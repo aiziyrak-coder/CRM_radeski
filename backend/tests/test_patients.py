@@ -249,3 +249,31 @@ async def test_registrar_can_register_walk_in(client: AsyncClient) -> None:
     await make_user("reg", Role.REGISTRAR)
     headers = bearer(await login(client, "reg"))
     assert (await create(client, headers))["full_name"] == "Каримова Дилноза"
+
+
+async def test_default_list_hides_cold_base_but_search_finds_it(
+    client: AsyncClient, op: dict
+) -> None:
+    named = await create(client, op)
+    async with SessionLocal() as s:
+        from app.core.text import search_key
+        from app.modules.patients.models import Patient, PatientKind, PatientPhone
+
+        s.add(
+            Patient(
+                full_name="Ismi noma'lum",
+                search_key=search_key("Ismi noma'lum"),
+                kind=PatientKind.COLD,
+                tags=[],
+                phones=[PatientPhone(number="+998935550000", is_primary=True)],
+            )
+        )
+        await s.commit()
+
+    listed = await client.get("/api/patients", headers=op)
+    assert [i["id"] for i in listed.json()["items"]] == [named["id"]]
+
+    cold = await client.get("/api/patients", params={"kind": "cold"}, headers=op)
+    assert cold.json()["total"] == 1
+    by_phone = await client.get("/api/patients", params={"q": "5550000"}, headers=op)
+    assert by_phone.json()["total"] == 1

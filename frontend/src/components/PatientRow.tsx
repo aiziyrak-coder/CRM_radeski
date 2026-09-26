@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import { formatDate, type PatientListItem } from '../lib/patients'
+import PatientName from './PatientName'
+import PatientTags from './PatientTags'
 import { Badge } from './ui'
 
 export default function PatientRow({ p, action }: { p: PatientListItem; action?: ReactNode }) {
@@ -10,8 +12,11 @@ export default function PatientRow({ p, action }: { p: PatientListItem; action?:
     <tr className="border-t border-slate-100 align-top">
       <td className="py-2.5 pr-4">
         <Link to={`/patients/${p.id}`} className="font-medium text-teal-800 hover:underline">
-          {p.full_name}
+          <PatientName name={p.full_name} />
         </Link>
+        <span className="ml-2">
+          <PatientTags tags={p.tags} />
+        </span>
         {p.do_not_call && (
           <span className="ml-2">
             <Badge tone="bad">{t('patients.dnc')}</Badge>

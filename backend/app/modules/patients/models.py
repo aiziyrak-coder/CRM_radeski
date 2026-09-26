@@ -76,6 +76,12 @@ class Patient(UUIDPk, Timestamps, Base):
         lazy="selectin",
     )
 
+    conditions: Mapped[list["PatientCondition"]] = relationship(
+        cascade="all, delete-orphan",
+        order_by="PatientCondition.created_at",
+        lazy="selectin",
+    )
+
     __table_args__ = (
         Index(
             "ix_patients_search_key_trgm",
@@ -111,3 +117,19 @@ class PatientPhone(UUIDPk, Base):
             postgresql_ops={"number": "gin_trgm_ops"},
         ),
     )
+
+
+class PatientCondition(UUIDPk, Base):
+    """A diagnosis as written in a source (free text, RU/UZ/ICD mixed).
+    Phase 0.5 maps raw_text to a normalized category."""
+
+    __tablename__ = "patient_conditions"
+
+    patient_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("patients.id", ondelete="CASCADE"), index=True
+    )
+    raw_text: Mapped[str] = mapped_column(String(500))
+    category_code: Mapped[str | None] = mapped_column(String(50), index=True)
+    visit_type: Mapped[str | None] = mapped_column(String(20))  # "first" | "repeat" if known
+    source: Mapped[str] = mapped_column(String(100))  # e.g. "import:main", "import:psoriasis"
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

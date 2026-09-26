@@ -63,6 +63,32 @@ cd /home/radeski-crm && docker compose -f docker-compose.prod.yml exec api pytho
 
 Qolgan foydalanuvchilar (operatorlar, registratorlar, shifokorlar) CRM ichidagi **Foydalanuvchilar** sahifasidan qo'shiladi.
 
+## 2a. Eski Excel bazasini import qilish (bir marta)
+
+Fayllar serverga **git orqali emas**, to'g'ridan-to'g'ri nusxalanadi, chunki ularda bemorlarning shaxsiy ma'lumotlari bor. Import ishlashi uchun papkada quyidagilar bo'lishi kerak:
+- `Список_всех_пациентов_по_клинике_за_весь_период.xlsx`;
+- 7 ta tuman fayli;
+- `ПСОРИАЗ, АТОПИК ДЕРМА, ВИТИЛИГО.xls`;
+- `nomer.xlsx`.
+
+```bash
+mkdir -p /home/radeski-crm/data/legacy && chmod 700 /home/radeski-crm/data
+```
+
+Fayllarni o'z kompyuteringizdan yuboring (masalan, `scp`). Keyin avval sinov rejimida ishga tushiring, bu bosqichda bazaga hech narsa yozilmaydi:
+
+```bash
+cd /home/radeski-crm && docker compose -f docker-compose.prod.yml run --rm -v /home/radeski-crm/data/legacy:/import api python -m app.cli import-legacy --dir /import --dry-run
+```
+
+Raqamlar to'g'ri bo'lsa, haqiqiy import qiling. Uni qayta ishga tushirish xavfsiz, allaqachon kiritilganlar o'tkazib yuboriladi:
+
+```bash
+cd /home/radeski-crm && docker compose -f docker-compose.prod.yml run --rm -v /home/radeski-crm/data/legacy:/import api python -m app.cli import-legacy --dir /import
+```
+
+Muammoli qatorlar (xato telefon yoki sana) `data/legacy/import-problems.csv` fayliga yoziladi. Bu bemorlar tizimga baribir kiritiladi va kartasida "Ma'lumotni tekshirish kerak" belgisi turadi.
+
 ## 3. Domen va SSL (sudo kerak, bu qadamni server egasi bajaradi)
 
 1. DNS: `crm.radeski.uz` uchun A yozuvi → `87.192.230.208`.
