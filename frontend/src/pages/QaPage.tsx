@@ -347,7 +347,7 @@ export default function QaPage() {
     <div className="max-w-6xl space-y-4">
       <h1 className="text-2xl font-semibold">{t('ai.title')}</h1>
       {status && !status.enabled && <Notice>{t('ai.disabled')}</Notice>}
-      {status?.enabled && (
+      {status?.enabled && status.spent_today_usd != null && (
         <p className="text-xs text-slate-500">
           {t('ai.spend', {
             spent: status.spent_today_usd.toFixed(3),

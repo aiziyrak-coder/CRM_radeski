@@ -59,6 +59,8 @@
     "validation_error": "Ma'lumotlar noto'g'ri to'ldirilgan",
     "forbidden": "Bu amal uchun ruxsat yo'q",
     "generic": "Xatolik yuz berdi. Qayta urinib ko'ring.",
+    "page": "Bu sahifani ko'rsatib bo'lmadi. Boshqa bo'limga o'tishingiz yoki sahifani yangilashingiz mumkin.",
+    "reload": "Sahifani yangilash",
     "invalid_phone": "Telefon raqami noto'g'ri (9 ta raqam kerak, masalan 90 000 22 44)",
     "invalid_birth_date": "Tug'ilgan sana noto'g'ri",
     "last_phone": "Bemorda kamida bitta telefon qolishi kerak",

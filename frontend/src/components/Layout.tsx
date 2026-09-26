@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Suspense, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, Outlet } from 'react-router'
+import PageErrorBoundary from './ErrorBoundary'
 import { api, type Language, type User } from '../lib/api'
 import { useAuth } from '../lib/auth-context'
 import { getUnread } from '../lib/messaging'
@@ -127,7 +128,9 @@ export default function Layout() {
           </header>
           <main className="flex-1 p-4 lg:p-6">
             <Suspense fallback={<p className="text-sm text-slate-500">{t('app.loading')}</p>}>
-              <Outlet />
+              <PageErrorBoundary>
+                <Outlet />
+              </PageErrorBoundary>
             </Suspense>
           </main>
         </div>

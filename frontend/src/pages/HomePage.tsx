@@ -163,7 +163,7 @@ function SystemHealth() {
               label={t('health.ai')}
               ok={i.ai}
               detail={
-                i.ai
+                i.ai && i.ai_spent_today_usd != null
                   ? t('health.aiSpend', {
                       spent: i.ai_spent_today_usd.toFixed(3),
                       budget: i.ai_daily_budget_usd,
