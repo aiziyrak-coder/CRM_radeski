@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, Timestamps, UUIDPk, str_enum
@@ -33,6 +33,10 @@ class User(UUIDPk, Timestamps, Base):
     branch_id: Mapped[uuid.UUID | None] = mapped_column(default=None)
     password_hash: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # second factor (admins, owner): base32 secret; enabled once the app was confirmed
+    totp_secret: Mapped[str | None] = mapped_column(String(64))
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    totp_last_step: Mapped[int | None] = mapped_column(Integer)  # replay protection
     # softphone extension (PBX_EXTENSIONS); one per operator
     sip_extension: Mapped[str | None] = mapped_column(String(10), unique=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

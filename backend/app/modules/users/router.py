@@ -9,7 +9,7 @@ from app.core.config import get_settings
 from app.core.deps import CurrentUser, SessionDep, client_ip, require_roles
 from app.core.security import create_access_token, verify_password
 from app.modules.audit import service as audit
-from app.modules.users import service
+from app.modules.users import service, totp
 from app.modules.users.models import Role, User
 from app.modules.users.schemas import (
     LoginIn,
@@ -17,6 +17,8 @@ from app.modules.users.schemas import (
     PasswordChange,
     PasswordSet,
     TokenOut,
+    TotpChallengeOut,
+    TotpIn,
     UserCreate,
     UserOut,
     UserUpdate,
@@ -65,7 +67,7 @@ def _token_out(user: User) -> TokenOut:
 @auth_router.post("/login")
 async def login(
     body: LoginIn, request: Request, response: Response, session: SessionDep
-) -> TokenOut:
+) -> TokenOut | TotpChallengeOut:
     ip = client_ip(request) or "unknown"
     if await ratelimit.is_locked(body.username, ip):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="too_many_attempts")
@@ -78,8 +80,44 @@ async def login(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
 
     await ratelimit.reset(body.username, ip)
+    if totp.required_for(user):
+        out = TotpChallengeOut(challenge=totp.challenge_for(user))
+        if not user.totp_enabled:
+            # first login since 2FA became required: enrol the authenticator app
+            user.totp_secret = totp.new_secret()
+            out.setup, out.secret = True, user.totp_secret
+            out.otpauth_uri, out.qr = totp.provisioning(user)
+        await session.commit()
+        return out
     raw = await service.start_session(session, user, ip, request.headers.get("user-agent"))
     audit.record(session, "auth.login", user_id=user.id, ip=ip)
+    await session.commit()
+    _set_refresh_cookie(response, raw)
+    return _token_out(user)
+
+
+@auth_router.post("/totp")
+async def login_totp(
+    body: TotpIn, request: Request, response: Response, session: SessionDep
+) -> TokenOut:
+    ip = client_ip(request) or "unknown"
+    user_id = totp.user_id_from(body.challenge)
+    user = await session.get(User, user_id) if user_id else None
+    if user is None or not user.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="challenge_expired")
+    if await ratelimit.is_locked(user.username, ip):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="too_many_attempts")
+    if not totp.verify(user, body.code.strip()):
+        await ratelimit.register_failure(user.username, ip)
+        audit.record(session, "auth.totp_failed", user_id=user.id, ip=ip)
+        await session.commit()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid_code")
+    await ratelimit.reset(user.username, ip)
+    if not user.totp_enabled:
+        user.totp_enabled = True
+        audit.record(session, "auth.totp_enrolled", user_id=user.id, ip=ip)
+    raw = await service.start_session(session, user, ip, request.headers.get("user-agent"))
+    audit.record(session, "auth.login", user_id=user.id, ip=ip, after={"totp": True})
     await session.commit()
     _set_refresh_cookie(response, raw)
     return _token_out(user)
@@ -225,6 +263,21 @@ async def update_user(
     )
     await session.commit()
     return UserOut.model_validate(user)
+
+
+@users_router.post("/{user_id}/totp-reset", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_totp(
+    user_id: uuid.UUID, request: Request, admin: AdminUser, session: SessionDep
+) -> None:
+    """Lost phone: the user enrols a new authenticator app at the next login."""
+    user = await _get_user_or_404(session, user_id)
+    user.totp_enabled, user.totp_secret, user.totp_last_step = False, None, None
+    await service.revoke_all_sessions(session, user.id)
+    audit.record(
+        session, "user.totp_reset", user_id=admin.id, entity="user", entity_id=user.id,
+        ip=client_ip(request),
+    )  # fmt: skip
+    await session.commit()
 
 
 @users_router.post("/{user_id}/password", status_code=status.HTTP_204_NO_CONTENT)

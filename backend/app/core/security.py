@@ -36,6 +36,7 @@ def create_access_token(user_id: uuid.UUID, role: str) -> str:
     payload = {
         "sub": str(user_id),
         "role": role,
+        "typ": "access",  # other signed tokens (e.g. the 2FA challenge) must not pass as access
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_minutes),
     }
@@ -43,8 +44,11 @@ def create_access_token(user_id: uuid.UUID, role: str) -> str:
 
 
 def decode_access_token(token: str) -> dict:
-    """Raises jwt.PyJWTError on invalid/expired tokens."""
-    return jwt.decode(token, get_settings().jwt_secret, algorithms=[_ALGORITHM])
+    """Raises jwt.PyJWTError on invalid/expired tokens and on tokens that aren't access tokens."""
+    payload = jwt.decode(token, get_settings().jwt_secret, algorithms=[_ALGORITHM])
+    if payload.get("typ") != "access":
+        raise jwt.InvalidTokenError("not an access token")
+    return payload
 
 
 def new_refresh_token() -> tuple[str, str]:

@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     session_absolute_hours: int = 12  # one working shift
     login_max_attempts: int = 5
     login_lock_minutes: int = 15
+    totp_roles: str = "admin,owner"  # roles that must use an authenticator app
+    totp_replay_guard: bool = True
 
     # External services
     openai_api_key: str = ""

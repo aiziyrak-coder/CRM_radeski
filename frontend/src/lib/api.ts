@@ -22,6 +22,16 @@ export type TokenResponse = {
   user: User
 }
 
+/** Admins and the owner get this instead of tokens: the authenticator code is the second step. */
+export type TotpChallenge = {
+  totp_required: true
+  challenge: string
+  setup: boolean
+  otpauth_uri: string | null
+  qr: string | null
+  secret: string | null
+}
+
 export type Role = 'operator' | 'supervisor' | 'registrar' | 'doctor' | 'owner' | 'admin'
 export type Language = 'uz' | 'ru'
 
@@ -34,6 +44,7 @@ export type User = {
   branch_id: string | null
   is_active: boolean
   sip_extension: string | null
+  totp_enabled: boolean
   last_login_at: string | null
   created_at: string
 }

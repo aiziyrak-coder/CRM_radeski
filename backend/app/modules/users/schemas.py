@@ -24,6 +24,7 @@ class UserOut(BaseModel):
     branch_id: uuid.UUID | None
     is_active: bool
     sip_extension: str | None = None
+    totp_enabled: bool = False
     last_login_at: datetime | None
     created_at: datetime
 
@@ -53,6 +54,22 @@ class PasswordSet(BaseModel):
 class LoginIn(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=128)
+
+
+class TotpChallengeOut(BaseModel):
+    """Password was right; the authenticator code is still needed (or the app must be enrolled)."""
+
+    totp_required: bool = True
+    challenge: str
+    setup: bool = False
+    otpauth_uri: str | None = None
+    qr: str | None = None  # SVG data URI
+    secret: str | None = None  # for typing it in when the camera can't scan
+
+
+class TotpIn(BaseModel):
+    challenge: str = Field(min_length=10, max_length=2000)
+    code: str = Field(min_length=6, max_length=8)
 
 
 class TokenOut(BaseModel):

@@ -100,6 +100,10 @@ function UserRow({ user, isSelf, extensions }: { user: User; isSelf: boolean; ex
       api<User>(`/users/${user.id}`, { method: 'PATCH', body }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['users'] }),
   })
+  const resetTotp = useMutation({
+    mutationFn: () => api<void>(`/users/${user.id}/totp-reset`, { method: 'POST' }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['users'] }),
+  })
   const reset = useMutation({
     mutationFn: (password: string) =>
       api<void>(`/users/${user.id}/password`, { method: 'POST', body: { password } }),
@@ -152,6 +156,22 @@ function UserRow({ user, isSelf, extensions }: { user: User; isSelf: boolean; ex
           <Badge tone={user.is_active ? 'good' : 'neutral'}>
             {user.is_active ? t('users.active') : t('users.inactive')}
           </Badge>
+          {(user.role === 'admin' || user.role === 'owner') && (
+            <div className="mt-1">
+              <Badge tone={user.totp_enabled ? 'good' : 'neutral'}>
+                {user.totp_enabled ? t('users.totpOn') : t('users.totpOff')}
+              </Badge>
+              {user.totp_enabled && !isSelf && (
+                <button
+                  className="ml-2 text-xs text-teal-800 hover:underline"
+                  disabled={resetTotp.isPending}
+                  onClick={() => window.confirm(t('users.totpResetConfirm')) && resetTotp.mutate()}
+                >
+                  {t('users.totpReset')}
+                </button>
+              )}
+            </div>
+          )}
         </td>
         <td className="py-3 pr-4 text-sm text-slate-600">
           {user.last_login_at ? formatDateTime(user.last_login_at) : t('users.never')}

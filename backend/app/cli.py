@@ -123,6 +123,20 @@ async def _stt_benchmark(args: argparse.Namespace) -> None:
             print(f"    {e}")
 
 
+async def _reset_totp(username: str) -> None:
+    from sqlalchemy import select
+
+    from app.modules.users.models import User
+
+    async with SessionLocal() as session:
+        user = await session.scalar(select(User).where(User.username == username.lower()))
+        if user is None:
+            sys.exit(f"Foydalanuvchi topilmadi: {username}")
+        user.totp_enabled, user.totp_secret, user.totp_last_step = False, None, None
+        await session.commit()
+    print(f"{username}: 2FA o'chirildi, keyingi kirishda ilovani qaytadan ulaydi")
+
+
 async def _telegram_setup() -> None:
     from app.core.config import get_settings
     from app.integrations.sms import SendError
@@ -171,6 +185,8 @@ def main() -> None:
     sub.add_parser("sync-diagnoses", help="tashxislar uchun toifa takliflarini yangilash")
     sub.add_parser("ai-diagnoses", help="qoidaga tushmagan tashxislarga AI toifa taklifi")
     sub.add_parser("telegram-setup", help="Telegram bot webhook'ini CRM manziliga o'rnatish")
+    totp_reset = sub.add_parser("reset-totp", help="admin telefonini yo'qotsa: 2FA'ni qayta ulash")
+    totp_reset.add_argument("--username", required=True)
     bench = sub.add_parser(
         "stt-benchmark", help="STT modellarini haqiqiy qo'ng'iroqlarda solishtirish"
     )
@@ -190,6 +206,8 @@ def main() -> None:
         asyncio.run(_sync_diagnoses())
     elif args.command == "ai-diagnoses":
         asyncio.run(_ai_diagnoses())
+    elif args.command == "reset-totp":
+        asyncio.run(_reset_totp(args.username))
     elif args.command == "telegram-setup":
         asyncio.run(_telegram_setup())
     elif args.command == "stt-benchmark":

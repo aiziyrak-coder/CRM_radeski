@@ -38,7 +38,11 @@
     "logout": "Chiqish",
     "expired": "Sessiya muddati tugadi. Qaytadan kiring.",
     "idle": "30 daqiqa harakatsizlik sababli tizimdan chiqildi.",
-    "manual": "Siz tizimdan chiqdingiz."
+    "manual": "Siz tizimdan chiqdingiz.",
+    "totpSetup": "Admin hisobi ikki bosqichli himoyada. Telefoningizda Google Authenticator (yoki Aegis, Microsoft Authenticator) ilovasini oching, QR kodni skanerlang va ilova ko'rsatgan 6 xonali kodni kiriting.",
+    "totpSecret": "Skaner ishlamasa, kalitni qo'lda kiriting",
+    "totpPrompt": "Autentifikator ilovasidagi 6 xonali kodni kiriting.",
+    "totpCode": "Kod"
   },
   "errors": {
     "invalid_credentials": "Login yoki parol noto'g'ri",
@@ -86,7 +90,9 @@
     "sms_off": "SMS provayder ulanmagan",
     "no_phone": "Bemorda telefon raqami yo'q",
     "ai_disabled": "AI ulanmagan (OPENAI_API_KEY)",
-    "ai_failed": "AI javob bera olmadi, qayta urinib ko'ring"
+    "ai_failed": "AI javob bera olmadi, qayta urinib ko'ring",
+    "invalid_code": "Kod noto'g'ri yoki eskirgan — ilovadagi yangi kodni kiriting",
+    "challenge_expired": "Vaqt tugadi, qaytadan login va parolni kiriting"
   },
   "home": {
     "welcome": "Xush kelibsiz, {{name}}",
@@ -128,7 +134,11 @@
     "newPassword": "Yangi parol",
     "passwordReset": "Parol yangilandi. Foydalanuvchining barcha sessiyalari yopildi.",
     "usernameHint": "Kichik lotin harflari, raqamlar, . _ -",
-    "extension": "Ichki raqam"
+    "extension": "Ichki raqam",
+    "totpOn": "2FA yoqilgan",
+    "totpOff": "2FA keyingi kirishda ulanadi",
+    "totpReset": "2FA'ni qayta ulash",
+    "totpResetConfirm": "Telefon yo'qolganmi? Keyingi kirishda yangi QR kod ko'rsatiladi."
   },
   "audit": {
     "title": "Audit jurnali",

@@ -1,7 +1,15 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import i18n from '../i18n'
-import { api, refreshSession, setAccessToken, setSessionHandlers, type TokenResponse, type User } from './api'
+import {
+  api,
+  refreshSession,
+  setAccessToken,
+  setSessionHandlers,
+  type TokenResponse,
+  type TotpChallenge,
+  type User,
+} from './api'
 import { AuthContext, type LogoutReason, type Status } from './auth-context'
 
 // TZ 5: the session closes after 30 minutes without user activity
@@ -54,10 +62,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (username: string, password: string) => {
-      const t = await api<TokenResponse>('/auth/login', {
+      const t = await api<TokenResponse | TotpChallenge>('/auth/login', {
         method: 'POST',
         body: { username, password },
       })
+      if ('totp_required' in t) return t
+      setLogoutReason(null)
+      applyToken(t)
+      return null
+    },
+    [applyToken],
+  )
+  const verifyTotp = useCallback(
+    async (challenge: string, code: string) => {
+      const t = await api<TokenResponse>('/auth/totp', { method: 'POST', body: { challenge, code } })
       setLogoutReason(null)
       applyToken(t)
     },
@@ -90,8 +108,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [status, logout])
 
   const value = useMemo(
-    () => ({ status, user, logoutReason, login, logout, setUser: applyUser }),
-    [status, user, logoutReason, login, logout, applyUser],
+    () => ({ status, user, logoutReason, login, verifyTotp, logout, setUser: applyUser }),
+    [status, user, logoutReason, login, verifyTotp, logout, applyUser],
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

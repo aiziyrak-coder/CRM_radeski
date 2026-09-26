@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { User } from './api'
+import type { TotpChallenge, User } from './api'
 
 export type Status = 'loading' | 'authenticated' | 'anonymous'
 export type LogoutReason = 'manual' | 'expired' | 'idle'
@@ -8,7 +8,9 @@ export type AuthContextValue = {
   status: Status
   user: User | null
   logoutReason: LogoutReason | null
-  login: (username: string, password: string) => Promise<void>
+  /** resolves with a challenge when an authenticator code is still needed */
+  login: (username: string, password: string) => Promise<TotpChallenge | null>
+  verifyTotp: (challenge: string, code: string) => Promise<void>
   logout: (reason?: LogoutReason) => Promise<void>
   setUser: (user: User) => void
 }

@@ -139,6 +139,17 @@ sudo systemctl reload nginx
 sudo certbot --nginx -d crm.radeski.uz
 ```
 
+### Admin kirishi (2FA)
+
+Admin va rahbar (owner) har kirishda telefon ilovasidagi 6 xonali kodni kiritadi. Birinchi kirishda
+ekranda QR kod chiqadi — Google Authenticator / Aegis / Microsoft Authenticator bilan skanerlang.
+Telefon yo'qolsa: boshqa admin Foydalanuvchilar sahifasida "2FA'ni qayta ulash"ni bosadi, yagona
+admin bo'lsa — serverda:
+
+```bash
+docker compose -p radeski-crm -f docker-compose.prod.yml exec api python -m app.cli reset-totp --username admin
+```
+
 ## 4. Zaxira nusxa (cron)
 
 Telefoniyani ulash — alohida: `docs/06_TELEFONIYA.md`.

@@ -27,14 +27,17 @@ def _test_redis_url() -> str:
 
 
 os.environ["ENVIRONMENT"] = "test"
+# tests log the same admin in several times within one 30-second TOTP step
+os.environ["TOTP_REPLAY_GUARD"] = "false"
 os.environ["DATABASE_URL"] = _test_db_url()
 os.environ["REDIS_URL"] = _test_redis_url()
 
 from datetime import time  # noqa: E402
 
+import pyotp  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from redis.asyncio import Redis  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import select, text  # noqa: E402
 
 import app.modules  # noqa: E402,F401  - register all models
 from app.core.db import Base, SessionLocal, engine  # noqa: E402
@@ -119,7 +122,17 @@ async def make_user(username: str, role: Role, *, active: bool = True) -> User:
 async def login(client: AsyncClient, username: str, password: str = TEST_PASSWORD) -> str:
     resp = await client.post("/api/auth/login", json={"username": username, "password": password})
     assert resp.status_code == 200, resp.text
-    return resp.json()["access_token"]
+    body = resp.json()
+    if body.get("totp_required"):  # admins / owner: answer with the authenticator code
+        async with SessionLocal() as s:
+            user = await s.scalar(select(User).where(User.username == username))
+            code = pyotp.TOTP(user.totp_secret).now()
+        resp = await client.post(
+            "/api/auth/totp", json={"challenge": body["challenge"], "code": code}
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+    return body["access_token"]
 
 
 def bearer(token: str) -> dict[str, str]:
