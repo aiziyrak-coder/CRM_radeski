@@ -4,7 +4,7 @@ Every generator is idempotent (dedupe keys), so beat jobs can safely re-run.
 """
 
 import uuid
-from datetime import date, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 from sqlalchemy import and_, exists, func, or_, select
@@ -276,15 +276,22 @@ async def _on_call(session: AsyncSession, p: dict[str, Any]) -> None:
         return
     # calling again while a callback is pending doesn't pile up tasks; once that task is
     # closed, a new missed call gets a new one (the key per call keeps a re-sent event idempotent)
+    # an inquiry whose "new inquiry" task is still open is the same callback
+    covering = (
+        (TaskType.MISSED_CALL, TaskType.NEW_LEAD) if call.lead_id else (TaskType.MISSED_CALL,)
+    )
     pending = await session.scalar(
         select(Task)
-        .where(owner, Task.type == TaskType.MISSED_CALL, Task.status == TaskStatus.OPEN)
+        .where(owner, Task.type.in_(covering), Task.status == TaskStatus.OPEN)
         .order_by(Task.created_at)
         .limit(1)
     )
     if pending is not None:
-        if note and note not in (pending.note or ""):
-            pending.note = f"{pending.note}\n{note}" if pending.note else note
+        started = clinic_time.local(call.started_at or datetime.now(UTC))
+        for line in (f"Yana qo'ng'iroq qildi {started:%H:%M}", note):
+            if line and line not in (pending.note or ""):
+                pending.note = f"{pending.note}\n{line}" if pending.note else line
+        pending.due_at = min(pending.due_at, due)  # they are waiting: not later than a new task
         return
     await tasks.create_task(
         session, TaskType.MISSED_CALL, due_at=due, dedupe_key=f"missed:{call.id}", note=note,

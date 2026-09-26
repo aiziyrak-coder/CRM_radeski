@@ -114,8 +114,10 @@ async def test_answered_call_resolves_the_inquiry_calls(client: AsyncClient, op:
     ).json()
     lead_id = uuid.UUID(lead["id"])
     await call_event(pbx_id="2.1", status=CallStatus.MISSED, phone="+998900001234", lead_id=lead_id)
-    assert len(await tasks_of(TaskType.MISSED_CALL)) == 1
-    assert len(await tasks_of(TaskType.NEW_LEAD)) == 1
+    # the open "new inquiry" task is that callback: one task in the queue, marked urgent
+    assert await tasks_of(TaskType.MISSED_CALL) == []
+    [inquiry] = await tasks_of(TaskType.NEW_LEAD)
+    assert "Yana qo'ng'iroq qildi" in (inquiry.note or "")
 
     # the person calls again and an operator answers (no patient card yet)
     await call_event(pbx_id="2.2", status=CallStatus.ANSWERED, phone="+998900001234")

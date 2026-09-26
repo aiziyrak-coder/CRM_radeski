@@ -122,14 +122,15 @@ async def test_missed_call_from_unknown_number_opens_an_inquiry(client: AsyncCli
     assert task.lead_id == lead.id
     assert (await get_call("200.1")).lead_id == lead.id
 
-    # the same number calling again becomes a callback on that inquiry, not a second lead
+    # the same number calling again is noted on that inquiry's task: no second lead or task
     await event(
         client, kind="end", direction="in", call_id="200.2", caller="935550011", status="missed"
     )
     async with SessionLocal() as s:
         assert len(list(await s.scalars(select(Lead)))) == 1
-    [missed] = await open_tasks(TaskType.MISSED_CALL)
-    assert missed.lead_id == lead.id
+    assert await open_tasks(TaskType.MISSED_CALL) == []
+    [task] = await open_tasks(TaskType.NEW_LEAD)
+    assert "Yana qo'ng'iroq qildi" in (task.note or "")
 
 
 async def test_outbound_call_from_a_task_is_linked(
