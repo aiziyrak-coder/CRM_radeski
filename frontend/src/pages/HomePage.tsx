@@ -6,37 +6,9 @@ import { api } from '../lib/api'
 import { useAuth } from '../lib/auth-context'
 import { getTaskSummary } from '../lib/ops'
 import { formatDateTime } from '../lib/patients'
+import { useSystemStatus } from '../lib/system'
 
 type Readiness = Record<'db' | 'redis', string>
-
-type SystemStatus = {
-  today: { missed_calls: number; unread_chats: number }
-  qa?: { red_flags_open: number }
-  integrations?: {
-    telephony: boolean
-    trunk: boolean
-    last_call_at: string | null
-    ai: boolean
-    ai_spent_today_usd: number
-    ai_daily_budget_usd: number
-    telegram: boolean
-    instagram: boolean
-    sms: string | null
-  }
-  attention?: {
-    recordings_failed: number
-    analyses_failed: number
-    messages_failed: number
-    messages_queued: number
-  }
-}
-
-const useSystemStatus = () =>
-  useQuery({
-    queryKey: ['system', 'status'],
-    queryFn: () => api<SystemStatus>('/system/status'),
-    refetchInterval: 60_000,
-  })
 
 function Tile({ label, value, alert, to }: { label: string; value: number; alert?: boolean; to?: string }) {
   const body = (
@@ -163,7 +135,7 @@ function SystemHealth() {
               label={t('health.ai')}
               ok={i.ai}
               detail={
-                i.ai && i.ai_spent_today_usd != null
+                i.ai && i.ai_spent_today_usd != null && i.ai_daily_budget_usd != null
                   ? t('health.aiSpend', {
                       spent: i.ai_spent_today_usd.toFixed(3),
                       budget: i.ai_daily_budget_usd,

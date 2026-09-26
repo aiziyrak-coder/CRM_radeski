@@ -14,6 +14,7 @@ from app.integrations.instagram import get_instagram
 from app.integrations.sms import get_sms_sender
 from app.integrations.telegram import get_telegram
 from app.modules.ai.models import AnalysisStatus, CallAnalysis
+from app.modules.leads.models import Lead, LeadStage
 from app.modules.messaging.models import Conversation, Message, MessageStatus
 from app.modules.telephony.models import (
     UNANSWERED_INBOUND,
@@ -51,6 +52,15 @@ async def system_status(session: SessionDep, user: Staff) -> dict[str, Any]:
             ),
             "unread_chats": await _count(
                 session, select(Conversation.id).where(Conversation.unread > 0)
+            ),
+            # TZ 4.4: an inquiry unanswered past its SLA is shown to the supervisor (header alert)
+            "leads_sla_breached": await _count(
+                session,
+                select(Lead.id).where(
+                    Lead.first_response_at.is_(None),
+                    Lead.sla_due_at < datetime.now(UTC),
+                    Lead.stage == LeadStage.NEW,
+                ),
             ),
         },
     }

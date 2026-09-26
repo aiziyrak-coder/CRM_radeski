@@ -699,6 +699,12 @@
     "open": "Skriptni ochish",
     "formatHint": "**qalin** · _kursiv_"
   },
+  "alerts": {
+    "title": "Ogohlantirishlar",
+    "sla": "15 daqiqada javob berilmagan murojaatlar",
+    "redFlags": "Ko'rib chiqilmagan qizil bayroqlar",
+    "missed": "Bugungi javobsiz qo'ng'iroqlar"
+  },
   "homeOps": {
     "tasks": "Bugungi vazifalar",
     "overdue": "Muddati o'tgan",

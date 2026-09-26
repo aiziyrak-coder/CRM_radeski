@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Suspense, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink, Outlet } from 'react-router'
+import AlertsBell from './AlertsBell'
 import PageErrorBoundary from './ErrorBoundary'
 import { api, type Language, type User } from '../lib/api'
 import { useAuth } from '../lib/auth-context'
@@ -113,6 +114,7 @@ export default function Layout() {
             </button>
             <span className="font-semibold text-teal-800 lg:hidden">{t('app.title')}</span>
             <div className="ml-auto flex items-center gap-3">
+              <AlertsBell />
               <SoftphoneStatus />
               <div className="hidden text-right sm:block">
                 <div className="text-sm font-medium">{user.full_name}</div>

@@ -24,7 +24,8 @@ async def test_system_status_for_staff_only(client: AsyncClient) -> None:
     doc = bearer(await login(client, "doc1"))
     assert (await client.get("/api/system/status", headers=doc)).status_code == 403
     op = (await client.get("/api/system/status", headers=bearer(await login(client, "op1")))).json()
-    assert op["today"] == {"missed_calls": 0, "unread_chats": 0} and "integrations" not in op
+    assert op["today"] == {"missed_calls": 0, "unread_chats": 0, "leads_sla_breached": 0}
+    assert "integrations" not in op
     sup = (
         await client.get("/api/system/status", headers=bearer(await login(client, "sup1")))
     ).json()
