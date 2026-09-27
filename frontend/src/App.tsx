@@ -13,6 +13,8 @@ const CallsPage = lazy(() => import('./pages/CallsPage'))
 const QaPage = lazy(() => import('./pages/QaPage'))
 const InboxPage = lazy(() => import('./pages/InboxPage'))
 const CampaignsPage = lazy(() => import('./pages/CampaignsPage'))
+const CampaignDetailPage = lazy(() => import('./pages/CampaignDetailPage'))
+const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'))
 const LeadsPage = lazy(() => import('./pages/LeadsPage'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
 const TasksPage = lazy(() => import('./pages/TasksPage'))
@@ -42,11 +44,13 @@ const PAGES: Record<string, ReactNode> = {
   '/calls': <CallsPage />,
   '/qa': <QaPage />,
   '/inbox': <InboxPage />,
+  '/integrations': <IntegrationsPage />,
 }
 
 // detail pages inherit the roles of their menu section
 const DETAIL_ROUTES: { path: string; section: string; element: ReactNode }[] = [
   { path: '/patients/:id', section: '/patients', element: <PatientCardPage /> },
+  { path: '/campaigns/:id', section: '/campaigns', element: <CampaignDetailPage /> },
 ]
 
 function RequireAuth({ children }: { children: ReactNode }) {

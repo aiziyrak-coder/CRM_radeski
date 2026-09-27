@@ -11,6 +11,20 @@ export type Category = {
   specialty: Specialty
   patients: number
   suggested_texts: number
+  suggested_rule: number
+  suggested_ai: number
+  approved_texts: number
+}
+
+export type ReviewProgress = {
+  total: number
+  approved: number
+  suggested: number
+  pending: number
+  suggested_rule: number
+  suggested_ai: number
+  patients: number
+  patients_categorized: number
 }
 
 export type Mapping = {
@@ -45,6 +59,15 @@ export const setMappingCategory = (id: string, category_code: string) =>
 
 export const approveMappings = (ids: string[]) =>
   api<{ approved: number }>('/diagnoses/mappings/approve', { method: 'POST', body: { ids } })
+
+/** A doctor approves every suggestion of one category at once (method null = rule and AI). */
+export const approveCategory = (category_code: string, method: 'rule' | 'ai' | null = 'rule') =>
+  api<{ approved: number }>('/diagnoses/mappings/approve-category', {
+    method: 'POST',
+    body: { category_code, method },
+  })
+
+export const getReviewProgress = () => api<ReviewProgress>('/diagnoses/progress')
 
 export const syncDiagnoses = () => api<Record<string, number>>('/diagnoses/sync', { method: 'POST' })
 export const aiSuggestDiagnoses = () =>

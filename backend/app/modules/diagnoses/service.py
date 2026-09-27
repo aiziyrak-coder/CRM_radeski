@@ -119,6 +119,52 @@ async def approve(session: AsyncSession, ids: list[uuid.UUID], user_id: uuid.UUI
     return len(mappings)
 
 
+async def approve_category(
+    session: AsyncSession, code: str, user_id: uuid.UUID, method: MappingMethod | None
+) -> int:
+    """A doctor approves every suggestion of one category at once (e.g. all rule matches for
+    "akne" after looking through them); `method=None` takes rule and AI suggestions alike.
+    Only still-suggested rows are touched: texts decided meanwhile keep their decision."""
+    if code not in CATEGORY_BY_CODE:
+        raise UnknownCategoryError(code)
+    stmt = select(DiagnosisMapping.id).where(
+        DiagnosisMapping.status == MappingStatus.SUGGESTED, DiagnosisMapping.category_code == code
+    )
+    if method is not None:
+        stmt = stmt.where(DiagnosisMapping.method == method)
+    ids = list(await session.scalars(stmt))
+    return await approve(session, ids, user_id) if ids else 0
+
+
+async def progress(session: AsyncSession) -> dict[str, int]:
+    """How far the doctors' review is (TZ 4.8.4): texts by status and suggestion method, and
+    patients whose diagnoses already have an approved category."""
+    out = {"total": 0, "approved": 0, "suggested": 0, "pending": 0}
+    out |= {"suggested_rule": 0, "suggested_ai": 0}
+    for st, method, n in await session.execute(
+        select(DiagnosisMapping.status, DiagnosisMapping.method, func.count()).group_by(
+            DiagnosisMapping.status, DiagnosisMapping.method
+        )
+    ):
+        out["total"] += n
+        out[st.value] += n
+        if st is MappingStatus.SUGGESTED and method in (MappingMethod.RULE, MappingMethod.AI):
+            out[f"suggested_{method.value}"] += n
+    live = (
+        select(PatientCondition.patient_id)
+        .join(Patient, Patient.id == PatientCondition.patient_id)
+        .where(Patient.merged_into_id.is_(None))
+    )
+    out["patients"] = (
+        await session.scalar(select(func.count(func.distinct(live.subquery().c.patient_id)))) or 0
+    )
+    categorized = live.where(PatientCondition.category_code.is_not(None)).subquery()
+    out["patients_categorized"] = (
+        await session.scalar(select(func.count(func.distinct(categorized.c.patient_id)))) or 0
+    )
+    return out
+
+
 def _approve(mapping: DiagnosisMapping, user_id: uuid.UUID) -> None:
     mapping.status = MappingStatus.APPROVED
     mapping.approved_by = user_id
@@ -144,16 +190,29 @@ async def category_stats(session: AsyncSession) -> dict[str, dict[str, int]]:
         .where(PatientCondition.category_code.is_not(None), Patient.merged_into_id.is_(None))
         .group_by(PatientCondition.category_code)
     )
-    waiting = await session.execute(
-        select(DiagnosisMapping.category_code, func.count())
-        .where(DiagnosisMapping.status == MappingStatus.SUGGESTED)
-        .group_by(DiagnosisMapping.category_code)
+    texts = await session.execute(
+        select(
+            DiagnosisMapping.category_code,
+            DiagnosisMapping.status,
+            DiagnosisMapping.method,
+            func.count(),
+        )
+        .where(DiagnosisMapping.category_code.is_not(None))
+        .group_by(DiagnosisMapping.category_code, DiagnosisMapping.status, DiagnosisMapping.method)
     )
+    empty = {"patients": 0, "suggested_texts": 0, "suggested_rule": 0, "suggested_ai": 0}
+    empty["approved_texts"] = 0
     stats: dict[str, dict[str, int]] = {}
     for code, n in patients:
-        stats.setdefault(code, {"patients": 0, "suggested_texts": 0})["patients"] = n
-    for code, n in waiting:
-        stats.setdefault(code, {"patients": 0, "suggested_texts": 0})["suggested_texts"] = n
+        stats.setdefault(code, dict(empty))["patients"] = n
+    for code, st, method, n in texts:
+        row = stats.setdefault(code, dict(empty))
+        if st is MappingStatus.APPROVED:
+            row["approved_texts"] += n
+        elif st is MappingStatus.SUGGESTED:
+            row["suggested_texts"] += n
+            if method in (MappingMethod.RULE, MappingMethod.AI):
+                row[f"suggested_{method.value}"] += n
     return stats
 
 

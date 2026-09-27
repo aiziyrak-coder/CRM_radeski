@@ -1,14 +1,16 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Badge, Button, Card, ErrorText, Input, Notice, Select } from '../components/ui'
+import { Badge, Button, Card, ErrorText, Input, Modal, Notice, Select } from '../components/ui'
 import { getAiStatus } from '../lib/ai'
 import { useAuth } from '../lib/auth-context'
 import {
+  approveCategory,
   approveMappings,
   categoryName,
   getCategories,
   getMappings,
+  getReviewProgress,
   setMappingCategory,
   syncDiagnoses,
   aiSuggestDiagnoses,
@@ -67,6 +69,190 @@ function CategoryGrid({
         </button>
       ))}
     </div>
+  )
+}
+
+function Meter({ value, total }: { value: number; total: number }) {
+  const pct = total ? Math.round((100 * value) / total) : 0
+  return (
+    <div className="h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuenow={pct}>
+      <div className="h-full rounded-full bg-teal-600" style={{ width: `${pct}%` }} />
+    </div>
+  )
+}
+
+/** TZ 4.8.4 review progress: texts a doctor has approved, patients who already have a category. */
+function ReviewProgressCard() {
+  const { t } = useTranslation()
+  const { data: p } = useQuery({ queryKey: ['diagnoses', 'progress'], queryFn: getReviewProgress })
+  if (!p || p.total === 0) return null
+  const pct = (a: number, b: number) => (b ? Math.round((100 * a) / b) : 0)
+  return (
+    <Card title={t('diagnoses.progress.title')}>
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div>
+          <div className="mb-1 flex justify-between gap-2 text-sm">
+            <span>{t('diagnoses.progress.texts', { approved: p.approved, total: p.total })}</span>
+            <span className="font-semibold tabular-nums">{pct(p.approved, p.total)}%</span>
+          </div>
+          <Meter value={p.approved} total={p.total} />
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+            <span>{t('diagnoses.progress.rule', { n: p.suggested_rule })}</span>
+            <span>{t('diagnoses.progress.ai', { n: p.suggested_ai })}</span>
+            <span>{t('diagnoses.progress.pending', { n: p.pending })}</span>
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 flex justify-between gap-2 text-sm">
+            <span>
+              {t('diagnoses.progress.patients', { done: p.patients_categorized, total: p.patients })}
+            </span>
+            <span className="font-semibold tabular-nums">{pct(p.patients_categorized, p.patients)}%</span>
+          </div>
+          <Meter value={p.patients_categorized} total={p.patients} />
+          <p className="mt-2 text-xs text-slate-600">{t('diagnoses.progress.patientsHint')}</p>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+/** Bulk approval of one category, after the doctor sees exactly which texts it covers. */
+function BulkApprove({ category, onClose }: { category: Category; onClose: () => void }) {
+  const { t, i18n } = useTranslation()
+  const queryClient = useQueryClient()
+  const [withAi, setWithAi] = useState(false)
+  const { data, error } = useQuery({
+    queryKey: ['diagnoses', 'mappings', 'bulk', category.code],
+    queryFn: () => getMappings({ status: 'suggested', category: category.code, offset: 0, limit: 500 }),
+  })
+  const items = data?.items.filter((m) => withAi || m.method === 'rule') ?? []
+  const approve = useMutation({
+    mutationFn: () => approveCategory(category.code, withAi ? null : 'rule'),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['diagnoses'] })
+      void queryClient.invalidateQueries({ queryKey: ['patients'] })
+    },
+  })
+  const name = categoryName(category, i18n.language)
+  return (
+    <Modal title={t('diagnoses.bulk.title', { name })} onClose={onClose} wide>
+      {approve.data ? (
+        <div className="space-y-3">
+          <Notice>{t('diagnoses.approved', { count: approve.data.approved })}</Notice>
+          <div className="flex justify-end">
+            <Button onClick={onClose}>{t('app.close')}</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-700">{t('diagnoses.bulk.hint', { name })}</p>
+          {category.suggested_ai > 0 && (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={withAi} onChange={(e) => setWithAi(e.target.checked)} />
+              {t('diagnoses.bulk.withAi', { n: category.suggested_ai })}
+            </label>
+          )}
+          <ErrorText error={error ?? approve.error} />
+          <div className="max-h-[50vh] overflow-y-auto rounded-md border border-slate-200">
+            <table className="w-full text-left text-sm">
+              <thead className="sticky top-0 bg-white text-xs text-slate-500 uppercase">
+                <tr>
+                  <th className="px-3 py-2 font-medium">{t('diagnoses.text')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('diagnoses.count')}</th>
+                  <th className="px-3 py-2 font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((m) => (
+                  <tr key={m.id} className="border-t border-slate-100">
+                    <td className="px-3 py-1.5">{m.text}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{m.patients}</td>
+                    <td className="px-3 py-1.5 text-xs text-slate-500">
+                      {m.method && t(`diagnoses.methods.${m.method}`)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {data && items.length === 0 && (
+              <p className="p-3 text-sm text-slate-500">{t('diagnoses.bulk.nothing')}</p>
+            )}
+          </div>
+          {data && data.total > 500 && <p className="text-xs text-amber-800">{t('diagnoses.bulk.more')}</p>}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" onClick={onClose}>
+              {t('patients.cancel')}
+            </Button>
+            <Button
+              disabled={!data || items.length === 0 || approve.isPending}
+              onClick={() => approve.mutate()}
+            >
+              {t('diagnoses.bulk.confirm', { n: items.length })}
+            </Button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+const QUEUE_ROWS = 8
+
+/** Categories that still have suggestions: review a category, then approve all of it at once. */
+function ReviewQueue({ categories, onShow }: { categories: Category[]; onShow: (code: string) => void }) {
+  const { t, i18n } = useTranslation()
+  const [bulk, setBulk] = useState<Category | null>(null)
+  const [all, setAll] = useState(false)
+  const waiting = categories
+    .filter((c) => c.suggested_texts > 0)
+    .sort((a, b) => b.suggested_texts - a.suggested_texts)
+  if (waiting.length === 0) return null
+  const shown = all ? waiting : waiting.slice(0, QUEUE_ROWS)
+  return (
+    <Card title={t('diagnoses.bulk.queue')}>
+      <p className="mb-3 text-xs text-slate-500">{t('diagnoses.bulk.queueHint')}</p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] text-left text-sm">
+          <thead className="text-xs text-slate-500 uppercase">
+            <tr>
+              <th className="pb-2 font-medium">{t('diagnoses.category')}</th>
+              <th className="pb-2 text-right font-medium">{t('diagnoses.bulk.rule')}</th>
+              <th className="pb-2 text-right font-medium">{t('diagnoses.bulk.ai')}</th>
+              <th className="pb-2 text-right font-medium">{t('diagnoses.bulk.approvedCol')}</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((c) => (
+              <tr key={c.code} className="border-t border-slate-100">
+                <td className="py-2 pr-3">
+                  <div className="font-medium">{categoryName(c, i18n.language)}</div>
+                  <div className="text-xs text-slate-500">{t(`diagnoses.specialties.${c.specialty}`)}</div>
+                </td>
+                <td className="py-2 pr-3 text-right tabular-nums">{c.suggested_rule}</td>
+                <td className="py-2 pr-3 text-right tabular-nums">{c.suggested_ai}</td>
+                <td className="py-2 pr-3 text-right tabular-nums">{c.approved_texts}</td>
+                <td className="py-2 text-right whitespace-nowrap">
+                  <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => onShow(c.code)}>
+                    {t('diagnoses.bulk.show')}
+                  </Button>
+                  <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => setBulk(c)}>
+                    {t('diagnoses.bulk.approveAll')}
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {waiting.length > QUEUE_ROWS && (
+        <Button variant="ghost" className="mt-2 px-2 py-1 text-xs" onClick={() => setAll(!all)}>
+          {all ? t('diagnoses.bulk.fewer') : t('diagnoses.bulk.all', { n: waiting.length })}
+        </Button>
+      )}
+      {bulk && <BulkApprove category={bulk} onClose={() => setBulk(null)} />}
+    </Card>
   )
 }
 
@@ -140,7 +326,7 @@ function MappingRow({
 }
 
 export default function DiagnosesPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const canEdit = user?.role === 'admin' || user?.role === 'doctor'
@@ -177,6 +363,8 @@ export default function DiagnosesPage() {
   })
   const { data: ai } = useQuery({ queryKey: ['ai', 'status'], queryFn: getAiStatus, staleTime: 600_000 })
 
+  const [bulk, setBulk] = useState<Category | null>(null)
+  const selectedCategory = categories.find((c) => c.code === category)
   const suggestedOnPage = data?.items.filter((m) => m.status === 'suggested').map((m) => m.id) ?? []
   const resetPaging = () => {
     setOffset(0)
@@ -191,6 +379,19 @@ export default function DiagnosesPage() {
         {!canEdit && <p className="mt-2 text-sm text-amber-800">{t('diagnoses.readOnly')}</p>}
       </div>
 
+      <ReviewProgressCard />
+      {canEdit && (
+        <ReviewQueue
+          categories={categories}
+          onShow={(code) => {
+            setCategory(code)
+            setStatus('suggested')
+            resetPaging()
+            document.getElementById('mappings')?.scrollIntoView({ behavior: 'smooth' })
+          }}
+        />
+      )}
+
       <Card title={t('diagnoses.categories')}>
         <p className="mb-3 text-xs text-slate-500">{t('diagnoses.legend')}</p>
         <CategoryGrid
@@ -203,6 +404,7 @@ export default function DiagnosesPage() {
         />
       </Card>
 
+      <div id="mappings" />
       <Card>
         <div className="mb-4 flex flex-col gap-3 md:flex-row">
           <Input
@@ -247,6 +449,14 @@ export default function DiagnosesPage() {
             >
               {t('diagnoses.approvePage')}
             </Button>
+            {selectedCategory && selectedCategory.suggested_texts > 0 && (
+              <Button variant="secondary" onClick={() => setBulk(selectedCategory)}>
+                {t('diagnoses.bulk.approveCategory', {
+                  name: categoryName(selectedCategory, i18n.language),
+                  n: selectedCategory.suggested_rule,
+                })}
+              </Button>
+            )}
             <Button variant="ghost" disabled={sync.isPending} onClick={() => sync.mutate()}>
               {t('diagnoses.sync')}
             </Button>
@@ -319,6 +529,7 @@ export default function DiagnosesPage() {
           </div>
         )}
       </Card>
+      {bulk && <BulkApprove category={bulk} onClose={() => setBulk(null)} />}
     </div>
   )
 }

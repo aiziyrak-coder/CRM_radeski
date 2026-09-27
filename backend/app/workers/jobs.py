@@ -59,12 +59,19 @@ def campaigns() -> int:
 @celery_app.task(name="jobs.sync_catalog")
 def sync_catalog() -> dict[str, int]:
     from app.modules.catalog.sync import SyncAbortedError, sync_from_site
+    from app.modules.integrations_status import heartbeat
 
     try:
-        return dict(_run(sync_from_site))
+        counts = dict(_run(sync_from_site))
     except SyncAbortedError as exc:  # the site answered with an empty/partial list: keep ours
         log.warning("catalog sync aborted, nothing changed: %s", exc)
+        heartbeat.record("catalog_sync", ok=False, error="sync_aborted")
         return {"aborted": 1}
+    except Exception as exc:
+        heartbeat.record("catalog_sync", ok=False, error=type(exc).__name__)
+        raise
+    heartbeat.record("catalog_sync", ok=True, detail=counts)
+    return counts
 
 
 @celery_app.task(name="jobs.sync_diagnoses")
@@ -95,7 +102,15 @@ def poll_site() -> int:
             created += is_new
         return created
 
-    return _run(intake)
+    from app.modules.integrations_status import heartbeat
+
+    try:
+        created = _run(intake)
+    except Exception as exc:  # the admin's integrations page shows the failing polling
+        heartbeat.record("site_poll", ok=False, error=type(exc).__name__)
+        raise
+    heartbeat.record("site_poll", ok=True, detail={"created": created})
+    return created
 
 
 @celery_app.task(name="jobs.process_recording")

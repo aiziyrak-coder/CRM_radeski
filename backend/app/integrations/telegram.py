@@ -48,6 +48,13 @@ class TelegramBot:
         result = await self.call("sendMessage", payload)
         return str(result["message_id"])
 
+    async def get_me(self) -> dict[str, Any]:
+        return await self.call("getMe", {})
+
+    async def webhook_info(self) -> dict[str, Any]:
+        """Where Telegram delivers updates and its last delivery error (read-only)."""
+        return await self.call("getWebhookInfo", {})
+
     async def set_webhook(self, url: str, secret: str) -> None:
         await self.call(
             "setWebhook",

@@ -58,6 +58,8 @@ def segment_query(segment: dict[str, Any]) -> Select:
         stmt = stmt.where(Patient.district.in_(districts))
     if sources := segment.get("sources"):
         stmt = stmt.where(Patient.source.in_(sources))
+    if tags := segment.get("tags"):  # any of the tags
+        stmt = stmt.where(Patient.tags.overlap(list(tags)))
     if gender := segment.get("gender"):
         stmt = stmt.where(Patient.gender == gender)
     if categories := segment.get("categories"):

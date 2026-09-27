@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,8 +23,11 @@ class Campaign(UUIDPk, Timestamps, Base):
     __tablename__ = "campaigns"
 
     name: Mapped[str] = mapped_column(String(255))
+    # goal and notes for the operators ("why are we calling them")
+    description: Mapped[str | None] = mapped_column(Text)
     # {"kinds": [...], "categories": [...], "districts": [...], "sources": [...],
-    #  "last_visit_before_days": 180, "gender": "female", "age_min": 18, "age_max": 60}
+    #  "tags": [...], "last_visit_before_days": 180, "gender": "female", "age_min": 18,
+    #  "age_max": 60}
     segment: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     script_code: Mapped[str | None] = mapped_column(String(30))
     # A/B test: half of the audience (split by patient id) is called with this script instead
@@ -37,3 +40,7 @@ class Campaign(UUIDPk, Timestamps, Base):
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    # TZ 4.8.3: the AI write-up of the results, cached with a fingerprint of the figures it was
+    # made from (asking again without new results costs nothing)
+    ai_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    ai_summary_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

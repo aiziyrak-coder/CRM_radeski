@@ -5,7 +5,9 @@ import { Link, useSearchParams } from 'react-router'
 import BookingDialog from '../components/BookingDialog'
 import PatientName from '../components/PatientName'
 import { PatientPicker } from '../components/Pickers'
-import { Badge, Button, Card, ErrorText, Notice, Select } from '../components/ui'
+import { Badge, Button, Card, ErrorText, Input, Notice, Select } from '../components/ui'
+import { useAuth } from '../lib/auth-context'
+import { canOpen } from '../lib/navigation'
 import {
   CHANNELS,
   aiDraft,
@@ -36,6 +38,15 @@ function ChannelBadge({ channel }: { channel: Channel }) {
   )
 }
 
+function useDebounced<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value)
+  useEffect(() => {
+    const id = window.setTimeout(() => setV(value), ms)
+    return () => window.clearTimeout(id)
+  }, [value, ms])
+  return v
+}
+
 function who(c: Conversation): string {
   return c.patient_name ?? c.title ?? (c.phone ? formatPhone(c.phone) : '—')
 }
@@ -50,14 +61,25 @@ function ConversationList({
   const { t } = useTranslation()
   const [channel, setChannel] = useState('')
   const [unread, setUnread] = useState(false)
-  const { data, error } = useQuery({
-    queryKey: ['inbox', 'list', channel, unread],
-    queryFn: () => getConversations({ channel, unread }),
+  const [search, setSearch] = useState('')
+  const q = useDebounced(search.trim(), 300)
+  const { data, error, isFetching } = useQuery({
+    queryKey: ['inbox', 'list', channel, unread, q],
+    queryFn: () => getConversations({ channel, unread, q }),
     placeholderData: keepPreviousData,
     refetchInterval: 10_000,
   })
   return (
     <Card>
+      <Input
+        type="search"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder={t('inbox.search')}
+        aria-label={t('inbox.search')}
+        maxLength={100}
+        className="mb-2 py-1.5"
+      />
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Select value={channel} onChange={(e) => setChannel(e.target.value)} className="w-36 py-1 text-xs">
           <option value="">{t('inbox.all')}</option>
@@ -73,8 +95,14 @@ function ConversationList({
         </label>
       </div>
       <ErrorText error={error} />
-      {data?.length === 0 && <p className="py-6 text-center text-sm text-slate-500">{t('inbox.empty')}</p>}
-      <ul className="-mx-2 max-h-[70vh] divide-y divide-slate-100 overflow-y-auto">
+      {data?.length === 0 && (
+        <p className="py-6 text-center text-sm text-slate-500">
+          {q || unread || channel ? t('inbox.notFound') : t('inbox.empty')}
+        </p>
+      )}
+      <ul
+        className={`-mx-2 max-h-[70vh] divide-y divide-slate-100 overflow-y-auto ${isFetching && q ? 'opacity-60' : ''}`}
+      >
         {data?.map((c) => (
           <li key={c.id}>
             <button
@@ -210,8 +238,8 @@ function Thread({ id }: { id: string }) {
               <span>{t('inbox.notLinked')}</span>
             )}
             {c.lead_id && (
-              <Link to="/leads" className="ml-2 text-teal-800 hover:underline">
-                {t('inbox.lead')}
+              <Link to={`/leads?lead=${c.lead_id}`} className="ml-2 text-teal-800 hover:underline">
+                {t('inbox.openLead')} →
               </Link>
             )}
           </div>
@@ -317,6 +345,7 @@ function Thread({ id }: { id: string }) {
 
 export default function InboxPage() {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const [params, setParams] = useSearchParams()
   const selected = params.get('c')
   const { data: status } = useQuery({
@@ -328,7 +357,19 @@ export default function InboxPage() {
   return (
     <div className="max-w-7xl space-y-4">
       <h1 className="text-2xl font-semibold">{t('inbox.title')}</h1>
-      {nothing && <Notice>{t('inbox.noChannels')}</Notice>}
+      {nothing && (
+        <Notice>
+          {t('inbox.noChannels')}
+          {canOpen(user?.role, '/integrations') && (
+            <>
+              {' '}
+              <Link to="/integrations" className="font-medium underline">
+                {t('nav.integrations')} →
+              </Link>
+            </>
+          )}
+        </Notice>
+      )}
       {status && (
         <div className="flex flex-wrap gap-2 text-xs">
           <Badge tone={status.telegram ? 'good' : 'neutral'}>Telegram</Badge>

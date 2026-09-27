@@ -1,9 +1,12 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
 from app.core.db import SessionLocal
 from app.core.text import search_key
+from app.modules.audit.models import AuditLog
 from app.modules.diagnoses.categories import CATEGORIES, CATEGORY_BY_CODE, suggest_category
+from app.modules.diagnoses.models import DiagnosisMapping, MappingMethod, MappingStatus
 from app.modules.patients.models import Patient, PatientCondition, PatientKind
 from app.modules.users.models import Role
 from tests.conftest import bearer, login, make_user
@@ -165,3 +168,81 @@ async def test_registrars_read_categories_but_do_not_approve(client: AsyncClient
     assert (await client.get("/api/diagnoses/categories", headers=reg)).status_code == 200
     assert (await client.get("/api/diagnoses/mappings", headers=reg)).status_code == 200
     assert (await client.post("/api/diagnoses/sync", headers=reg)).status_code == 403
+
+
+# --- bulk review (1500+ rule suggestions wait for a doctor) -----------------------------------
+
+
+async def test_doctor_approves_all_rule_suggestions_of_a_category(
+    client: AsyncClient, doctor: dict
+) -> None:
+    await _patient_with("Вульгар хуснбузар", name="Bir")
+    await _patient_with("L70.0 Вульгарные угри", name="Ikki")
+    await _patient_with("Витилиго", name="Uch")
+    await _patient_with("Непонятный диагноз", name="To'rt")
+    await client.post("/api/diagnoses/sync", headers=doctor)
+    async with SessionLocal() as s:  # one acne text came from the AI, not a rule
+        s.add(
+            DiagnosisMapping(
+                text="угревая болезнь", category_code="acne", method=MappingMethod.AI,
+                status=MappingStatus.SUGGESTED,
+            )
+        )  # fmt: skip
+        await s.commit()
+    await _patient_with("угревая болезнь", name="Besh")
+    await client.post("/api/diagnoses/sync", headers=doctor)  # keys the new condition
+
+    before = (await client.get("/api/diagnoses/progress", headers=doctor)).json()
+    assert before == {
+        "total": 5, "approved": 0, "suggested": 4, "pending": 1, "suggested_rule": 3,
+        "suggested_ai": 1, "patients": 5, "patients_categorized": 0,
+    }  # fmt: skip
+    cats = {
+        c["code"]: c for c in (await client.get("/api/diagnoses/categories", headers=doctor)).json()
+    }
+    assert (cats["acne"]["suggested_rule"], cats["acne"]["suggested_ai"]) == (2, 1)
+
+    resp = await client.post(
+        "/api/diagnoses/mappings/approve-category", json={"category_code": "acne"}, headers=doctor
+    )
+    assert resp.status_code == 200 and resp.json() == {"approved": 2}  # rules only by default
+    after = (await client.get("/api/diagnoses/progress", headers=doctor)).json()
+    assert after["approved"] == 2 and after["suggested_ai"] == 1
+    assert after["patients_categorized"] == 2
+    cats = {
+        c["code"]: c for c in (await client.get("/api/diagnoses/categories", headers=doctor)).json()
+    }
+    assert cats["acne"]["patients"] == 2 and cats["acne"]["approved_texts"] == 2
+    assert cats["vitiligo"]["suggested_rule"] == 1  # other categories untouched
+
+    # the AI one needs an explicit choice
+    rest = await client.post(
+        "/api/diagnoses/mappings/approve-category",
+        json={"category_code": "acne", "method": None},
+        headers=doctor,
+    )
+    assert rest.json() == {"approved": 1}
+    async with SessionLocal() as s:
+        log = await s.scalar(
+            select(AuditLog).where(AuditLog.action == "diagnosis.approve_category").limit(1)
+        )
+        mapping = await s.scalar(
+            select(DiagnosisMapping).where(DiagnosisMapping.text == "угревая болезнь")
+        )
+    assert log.entity_id == "acne" and log.user_id is not None
+    assert mapping.status is MappingStatus.APPROVED and mapping.approved_by is not None
+
+    bad = await client.post(
+        "/api/diagnoses/mappings/approve-category", json={"category_code": "nope"}, headers=doctor
+    )
+    assert bad.status_code == 422 and bad.json()["detail"] == "unknown_category"
+
+
+async def test_bulk_approval_is_for_doctors_and_admins(client: AsyncClient) -> None:
+    await make_user("sup", Role.SUPERVISOR)
+    sup = bearer(await login(client, "sup"))
+    resp = await client.post(
+        "/api/diagnoses/mappings/approve-category", json={"category_code": "acne"}, headers=sup
+    )
+    assert resp.status_code == 403
+    assert (await client.get("/api/diagnoses/progress", headers=sup)).status_code == 200
