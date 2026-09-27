@@ -1,7 +1,7 @@
 """scheduling/catalog: absence kind, confirmed service duration, catalog sync runs
 
 Revision ID: c4d2a8e6f1b3
-Revises: 5b8e1d2c4f60
+Revises: c7a4e9d2b813
 Create Date: 2026-09-27 14:00:00.000000
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "c4d2a8e6f1b3"
-down_revision: str | None = "5b8e1d2c4f60"
+down_revision: str | None = "c7a4e9d2b813"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
