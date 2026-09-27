@@ -169,3 +169,13 @@ async def test_cli_reset_totp_is_audited_and_ends_sessions(client: AsyncClient) 
         log = await s.scalar(select(AuditLog).where(AuditLog.action == "user.totp_reset"))
         user = await s.scalar(select(User).where(User.username == "owner1"))
     assert log is not None and log.after == {"via": "cli"} and user.totp_enabled is False
+
+
+async def test_2fa_can_be_switched_off_for_every_role(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TOTP_ROLES= (empty) in .env: the clinic chose password-only logins."""
+    monkeypatch.setattr(get_settings(), "totp_roles", "")
+    await make_user("boss", Role.ADMIN)
+    resp = await password_step(client, "boss")
+    assert "access_token" in resp and "challenge" not in resp

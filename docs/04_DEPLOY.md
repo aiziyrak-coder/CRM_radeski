@@ -115,6 +115,13 @@ Bu serverga xos ikki narsa (skriptda hisobga olingan):
 
 ### Admin kirishi (2FA)
 
+**crm.devflix.uz da 2FA o'chirilgan** (klinika qarori, 2026-09-27): serverdagi `.env` da `TOTP_ROLES=`
+(bo'sh). Admin faqat parol bilan kiradi — parol uzun va boshqa joyda ishlatilmagan bo'lsin; parolni
+taxmin qilish urinishlari baribir bloklanadi. Qayta yoqish: `TOTP_ROLES=admin,owner` va
+`docker compose -f docker-compose.prod.yml up -d --no-deps api`.
+
+2FA yoqilgan bo'lsa:
+
 Admin va rahbar (owner) har kirishda telefon ilovasidagi 6 xonali kodni kiritadi. Birinchi kirishda
 ekranda QR kod chiqadi — Google Authenticator / Aegis / Microsoft Authenticator bilan skanerlang.
 Telefon yo'qolsa: boshqa admin Foydalanuvchilar sahifasida "2FA'ni qayta ulash"ni bosadi, yagona
