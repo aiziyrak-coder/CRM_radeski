@@ -425,3 +425,38 @@ async def test_recording_conversion_is_claimed(client: AsyncClient, tmp_path: Pa
         await s.commit()
     stored = await get_call("830.1")
     assert stored.recording == "830.1.mp3" and stored.recording_status == "ready"
+
+
+def test_ivr_prompt_texts_follow_the_clinic_hours() -> None:
+    from app.modules.telephony import prompts
+
+    texts = prompts.texts()
+    assert set(texts) == {"welcome", "after-hours", "press-1-callback", "callback-ok", "goodbye"}
+    uz, ru = texts["after-hours"]
+    # Mon-Sat 08:00-18:00, numbers spelled out for the TTS
+    assert "dushanbadan shanbagacha" in uz and "sakkizdan o'n sakkizgacha" in uz
+    assert "с понедельника по субботу" in ru and "с восьми до восемнадцати" in ru
+    assert all(u.strip() and r.strip() for u, r in texts.values())
+
+
+def test_ivr_prompt_is_converted_for_asterisk(tmp_path: Path) -> None:
+    import subprocess
+    import wave
+
+    from app.modules.telephony import prompts
+
+    def tone(seconds: float) -> bytes:  # what the TTS returns: 24 kHz mono WAV
+        out = tmp_path / f"tone{seconds}.wav"
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+             f"sine=frequency=440:duration={seconds}", "-ar", "24000", "-ac", "1", str(out)],
+            check=True,
+        )  # fmt: skip
+        return out.read_bytes()
+
+    target = tmp_path / "welcome.wav"
+    prompts.to_asterisk([tone(1.0), tone(0.5)], target)
+    with wave.open(str(target)) as w:
+        assert (w.getframerate(), w.getnchannels(), w.getsampwidth()) == (8000, 1, 2)
+        # both languages plus the pause between them
+        assert 2.0 <= w.getnframes() / w.getframerate() <= 2.3

@@ -96,8 +96,9 @@ Operatorga faqat **quloqchin (mikrofonli)** kerak; brauzer — Chrome yoki Edge.
 
 ## 5. Ovozli xabarlar
 
-`telephony/sounds/README.md` — qaysi fayl qachon eshitilishi va matni. Fayllar bo'lmaguncha IVR
-jim o'tadi (qo'ng'iroq baribir navbatga tushadi).
+Tayyor: o'zbek + rus tilida 5 ta fayl (OpenAI TTS bilan yaratilgan, qaytadan matnga o'girib
+tekshirilgan). Qaysi fayl qachon eshitilishi, matni, qayta yaratish yoki diktor yozuviga
+almashtirish — `telephony/sounds/README.md`.
 
 ## 6. Muammolar
 

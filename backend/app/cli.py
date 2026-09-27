@@ -174,6 +174,21 @@ async def _sync_catalog() -> None:
         print(f"  {key:30} {value}")
 
 
+async def _generate_prompts(args: argparse.Namespace) -> None:
+    from pathlib import Path
+
+    from app.integrations.openai_client import AiDisabledError
+    from app.modules.telephony import prompts
+
+    try:
+        written = await prompts.generate(Path(args.out), voice=args.voice, only=args.only)
+    except AiDisabledError as exc:
+        sys.exit(f"AI o'chiq yoki kunlik chegara tugagan: {exc}")
+    for path in written:
+        print(f"yozildi: {path}")
+    print("Tinglab ko'ring; yoqsa telephony/sounds/ ga (yoki pbx_sounds volume'iga) ko'chiring.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -194,6 +209,12 @@ def main() -> None:
     sub.add_parser("sync-diagnoses", help="tashxislar uchun toifa takliflarini yangilash")
     sub.add_parser("ai-diagnoses", help="qoidaga tushmagan tashxislarga AI toifa taklifi")
     sub.add_parser("telegram-setup", help="Telegram bot webhook'ini CRM manziliga o'rnatish")
+    prompts = sub.add_parser(
+        "generate-prompts", help="IVR ovozli xabarlarini OpenAI TTS bilan yaratish (UZ + RU)"
+    )
+    prompts.add_argument("--out", default="/recordings/ivr-prompts", help="natija papkasi")
+    prompts.add_argument("--voice", default="nova", help="OpenAI ovozi (nova, shimmer, coral...)")
+    prompts.add_argument("--only", nargs="*", help="faqat shu fayllar (masalan: welcome goodbye)")
     totp_reset = sub.add_parser("reset-totp", help="admin telefonini yo'qotsa: 2FA'ni qayta ulash")
     totp_reset.add_argument("--username", required=True)
     bench = sub.add_parser(
@@ -209,6 +230,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "create-user":
         asyncio.run(_create_user(args))
+    elif args.command == "generate-prompts":
+        asyncio.run(_generate_prompts(args))
     elif args.command == "sync-catalog":
         asyncio.run(_sync_catalog())
     elif args.command == "sync-diagnoses":
