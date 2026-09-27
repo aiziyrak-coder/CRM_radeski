@@ -30,6 +30,8 @@ def _test_redis_url() -> str:
 os.environ["ENVIRONMENT"] = "test"
 # tests log the same admin in several times within one 30-second TOTP step
 os.environ["TOTP_REPLAY_GUARD"] = "false"
+# tests describe the default policy, whatever the local .env chose (prod may switch 2FA off)
+os.environ["TOTP_ROLES"] = "admin,owner"
 os.environ["DATABASE_URL"] = _test_db_url()
 os.environ["REDIS_URL"] = _test_redis_url()
 # tests never reach the real OpenAI/Telegram/SMS APIs, even with keys in the developer's .env
