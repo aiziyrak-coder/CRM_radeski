@@ -1,31 +1,32 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import BookingDialog from '../components/BookingDialog'
-import PatientName from '../components/PatientName'
 import CallAnalysisDialog from '../components/CallAnalysisDialog'
-import { CallButton } from '../components/Softphone'
-import { getBrief } from '../lib/ai'
+import PatientName from '../components/PatientName'
 import ScriptButton from '../components/ScriptView'
-import { Badge, Button, Card, ErrorText, Field, Input, Select } from '../components/ui'
+import { CallButton } from '../components/Softphone'
+import TaskResultForm, { AttemptHistory, SupervisorActions } from '../components/TaskResultForm'
+import { Badge, Button, Card, ErrorText, Select } from '../components/ui'
+import { getBrief } from '../lib/ai'
 import { useAuth } from '../lib/auth-context'
 import {
   NEEDS_REASON,
-  OUTCOMES_FOR,
-  REASONS,
+  SUPERVISOR_ROLES,
   addShiftNote,
+  getDoneTasks,
   getShiftNotes,
   getTaskSummary,
   getTasks,
   leadPatient,
   recordResult,
-  type Outcome,
+  suggestedResult,
+  useTaskScriptValues,
   type Task,
   type TaskType,
 } from '../lib/ops'
-import { UNKNOWN_NAME, formatDate, formatDateTime, formatPhone, getPatient } from '../lib/patients'
-import { clinicTime } from '../lib/scheduling'
+import { formatDate, formatDateTime, formatPhone, getPatient } from '../lib/patients'
 
 const TYPES: TaskType[] = [
   'missed_call',
@@ -40,85 +41,6 @@ const TYPES: TaskType[] = [
   'reactivation',
   'campaign',
 ]
-
-/** What the AI heard, as a starting point for the result form (the operator decides). */
-function suggested(task: Task) {
-  const ai = task.ai_suggestion
-  const allowed = OUTCOMES_FOR[task.type]
-  return {
-    outcome: ai?.outcome && allowed.includes(ai.outcome) ? ai.outcome : allowed[0],
-    reason: ai?.reason ?? '',
-    note: ai ? [ai.summary, ai.next_step].filter(Boolean).join(' ') : '',
-  }
-}
-
-function ResultForm({ task, onDone }: { task: Task; onDone: () => void }) {
-  const { t } = useTranslation()
-  const initial = suggested(task)
-  const [outcome, setOutcome] = useState<Outcome>(initial.outcome)
-  const [reason, setReason] = useState(initial.reason)
-  const [note, setNote] = useState(initial.note)
-  const [callbackAt, setCallbackAt] = useState('')
-  const save = useMutation({
-    mutationFn: () =>
-      recordResult(task.id, {
-        outcome,
-        reason: reason || null,
-        note: note.trim() || null,
-        callback_at: callbackAt ? `${callbackAt}:00+05:00` : null,
-        analysis_id: task.ai_suggestion?.analysis_id ?? null,
-      }),
-    onSuccess: onDone,
-  })
-  const needsReason = NEEDS_REASON.includes(outcome)
-  return (
-    <div className="grid grid-cols-1 gap-2 rounded-md bg-slate-50 p-3 md:grid-cols-4">
-      <Field label={t('tasks.result')}>
-        <Select value={outcome} onChange={(e) => setOutcome(e.target.value as Outcome)}>
-          {OUTCOMES_FOR[task.type].map((o) => (
-            <option key={o} value={o}>
-              {t(`outcomes.${o}`)}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      {(needsReason || outcome === 'thinking') && (
-        <Field label={t('tasks.reason')}>
-          <Select value={reason} onChange={(e) => setReason(e.target.value)} required={needsReason}>
-            <option value="">—</option>
-            {REASONS.map((r) => (
-              <option key={r} value={r}>
-                {t(`reasons.${r}`)}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      )}
-      {(outcome === 'callback' || outcome === 'thinking') && (
-        <Field
-          label={t('tasks.callbackAt')}
-          hint={outcome === 'thinking' ? t('tasks.thinkingDefault') : undefined}
-        >
-          <Input type="datetime-local" value={callbackAt} onChange={(e) => setCallbackAt(e.target.value)} />
-        </Field>
-      )}
-      <div className="md:col-span-2">
-        <Field label={t('tasks.note')}>
-          <Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
-        </Field>
-      </div>
-      <div className="flex items-center gap-2 md:col-span-4">
-        <Button
-          disabled={save.isPending || (needsReason && !reason) || (outcome === 'callback' && !callbackAt)}
-          onClick={() => save.mutate()}
-        >
-          {t('tasks.save')}
-        </Button>
-        <ErrorText error={save.error} />
-      </div>
-    </div>
-  )
-}
 
 function Brief({ patientId }: { patientId: string }) {
   const { t, i18n } = useTranslation()
@@ -150,7 +72,7 @@ function AiSuggestionBox({ task, onEdit, onDone }: { task: Task; onEdit: () => v
   const { t } = useTranslation()
   const [details, setDetails] = useState(false)
   const s = task.ai_suggestion!
-  const initial = suggested(task)
+  const initial = suggestedResult(task)
   const confirm = useMutation({
     mutationFn: () =>
       recordResult(task.id, {
@@ -192,12 +114,76 @@ function AiSuggestionBox({ task, onEdit, onDone }: { task: Task; onEdit: () => v
   )
 }
 
+/** Who / why line: the visit, the recommendation or the campaign the call is about. */
+function TaskContext({ task }: { task: Task }) {
+  const { t, i18n } = useTranslation()
+  const ru = i18n.language === 'ru'
+  const c = task.context
+  const doctor = ru ? (c?.doctor_ru ?? c?.doctor_uz) : (c?.doctor_uz ?? c?.doctor_ru)
+  const services = ru ? (c?.services_ru ?? c?.services_uz) : (c?.services_uz ?? c?.services_ru)
+  const branch = ru ? (c?.branch_ru ?? c?.branch_uz) : (c?.branch_uz ?? c?.branch_ru)
+  const parts = [
+    task.appointment_at && `${t('tasks.appointment')}: ${formatDateTime(task.appointment_at)}`,
+    task.recommendation_due && `${t('taskQueue.recDue')}: ${formatDate(task.recommendation_due)}`,
+    doctor,
+    services,
+    branch,
+    task.campaign_name && `${t('taskQueue.campaign')}: ${task.campaign_name}`,
+    task.lead_channel && t(`leads.channels.${task.lead_channel}`),
+    task.patient_language && task.patient_language.toUpperCase(),
+  ].filter(Boolean)
+  return (
+    <div className="mt-0.5 text-xs text-slate-500">
+      {t('tasks.due')}: <span className="tabular-nums">{formatDateTime(task.due_at)}</span>
+      {parts.map((p, i) => (
+        <span key={i}> · {p}</span>
+      ))}
+    </div>
+  )
+}
+
+function TaskHead({ task }: { task: Task }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone={task.priority <= 10 ? 'bad' : task.priority <= 20 ? 'info' : 'neutral'}>
+          {t(`taskTypes.${task.type}`)}
+        </Badge>
+        {task.overdue && <Badge tone="bad">{t('tasks.overdue')}</Badge>}
+        {task.do_not_call && <Badge tone="bad">{t('tasks.dnc')}</Badge>}
+        {task.attempts > 0 && (
+          <span className="text-xs text-slate-500">{t('tasks.attempts', { count: task.attempts })}</span>
+        )}
+      </div>
+      <div className="mt-1 text-base font-medium break-words">
+        {task.patient_id ? (
+          <Link to={`/patients/${task.patient_id}`} className="text-teal-800 hover:underline">
+            <PatientName name={task.patient_name ?? '—'} />
+          </Link>
+        ) : (
+          (task.patient_name ?? '—')
+        )}
+        {task.patient_phone && (
+          <a
+            href={`tel:${task.patient_phone}`}
+            className="ml-3 font-normal whitespace-nowrap text-slate-700 tabular-nums hover:underline"
+          >
+            {formatPhone(task.patient_phone)}
+          </a>
+        )}
+      </div>
+    </>
+  )
+}
+
 function TaskCard({ task }: { task: Task }) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [booking, setBooking] = useState<{ patientId: string } | null>(null)
+  const values = useTaskScriptValues(task, user)
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['tasks'] })
     void queryClient.invalidateQueries({ queryKey: ['leads'] })
@@ -214,56 +200,21 @@ function TaskCard({ task }: { task: Task }) {
       if (patientId) setBooking({ patientId })
     },
   })
+  const supervisor = SUPERVISOR_ROLES.includes(user?.role ?? '')
 
-  const scriptValues = {
-    Ism: user?.full_name.split(' ')[0],
-    Bemor: task.patient_name === UNKNOWN_NAME ? t('patients.tagNoName') : task.patient_name,
-    sana: task.appointment_at ? formatDate(task.appointment_at) : undefined,
-    vaqt: task.appointment_at ? clinicTime(task.appointment_at) : undefined,
-  }
   return (
     <div className={`rounded-lg border bg-white p-4 ${task.overdue ? 'border-red-300' : 'border-slate-200'}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={task.priority <= 10 ? 'bad' : task.priority <= 20 ? 'info' : 'neutral'}>
-              {t(`taskTypes.${task.type}`)}
-            </Badge>
-            {task.overdue && <Badge tone="bad">{t('tasks.overdue')}</Badge>}
-            {task.do_not_call && <Badge tone="bad">{t('tasks.dnc')}</Badge>}
-            {task.attempts > 0 && (
-              <span className="text-xs text-slate-500">{t('tasks.attempts', { count: task.attempts })}</span>
-            )}
-          </div>
-          <div className="mt-1 text-base font-medium">
-            {task.patient_id ? (
-              <Link to={`/patients/${task.patient_id}`} className="text-teal-800 hover:underline">
-                <PatientName name={task.patient_name ?? '—'} />
-              </Link>
-            ) : (
-              (task.patient_name ?? '—')
-            )}
-            {task.patient_phone && (
-              <a
-                href={`tel:${task.patient_phone}`}
-                className="ml-3 font-normal text-slate-700 tabular-nums hover:underline"
-              >
-                {formatPhone(task.patient_phone)}
-              </a>
-            )}
-          </div>
-          <div className="mt-0.5 text-xs text-slate-500">
-            {t('tasks.due')}: {formatDateTime(task.due_at)}
-            {task.appointment_at && ` · ${t('tasks.appointment')}: ${formatDateTime(task.appointment_at)}`}
-            {task.lead_channel && ` · ${t(`leads.channels.${task.lead_channel}`)}`}
-            {task.patient_language && ` · ${task.patient_language.toUpperCase()}`}
-          </div>
+        <div className="min-w-0 flex-1">
+          <TaskHead task={task} />
+          <TaskContext task={task} />
           {task.note && <div className="mt-1 text-sm whitespace-pre-line text-slate-700">{task.note}</div>}
           {task.patient_id && <Brief patientId={task.patient_id} />}
+          <AttemptHistory task={task} />
         </div>
         <div className="flex flex-wrap gap-1">
           <CallButton number={task.patient_phone} taskId={task.id} />
-          <ScriptButton code={task.script_code} language={task.patient_language} values={scriptValues} />
+          {!open && <ScriptButton code={task.script_code} language={task.patient_language} values={values} />}
           {task.type !== 'confirm_visit' && task.type !== 'post_procedure' && (
             <Button
               variant="secondary"
@@ -274,8 +225,8 @@ function TaskCard({ task }: { task: Task }) {
               {t('tasks.book')}
             </Button>
           )}
-          <Button className="px-2 py-1 text-xs" onClick={() => setOpen(!open)}>
-            {t('tasks.result')}
+          <Button className="px-2 py-1 text-xs" aria-expanded={open} onClick={() => setOpen(!open)}>
+            {open ? t('taskQueue.closeResult') : t('tasks.result')}
           </Button>
         </div>
       </div>
@@ -285,8 +236,9 @@ function TaskCard({ task }: { task: Task }) {
       )}
       {open && (
         <div className="mt-3">
-          <ResultForm
+          <TaskResultForm
             task={task}
+            user={user}
             onDone={() => {
               // a second click must not record a second attempt
               setOpen(false)
@@ -295,6 +247,7 @@ function TaskCard({ task }: { task: Task }) {
           />
         </div>
       )}
+      {supervisor && <SupervisorActions task={task} onDone={refresh} />}
       {booking && patientForBooking.data && (
         <BookingDialog
           patient={patientForBooking.data}
@@ -352,66 +305,329 @@ function ShiftNotes() {
   )
 }
 
-export default function TasksPage() {
+function SkeletonCards() {
+  return (
+    <div className="space-y-3" aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="animate-pulse rounded-lg border border-slate-200 bg-white p-4">
+          <div className="h-4 w-32 rounded bg-slate-200" />
+          <div className="mt-3 h-5 w-64 max-w-full rounded bg-slate-200" />
+          <div className="mt-2 h-3 w-80 max-w-full rounded bg-slate-100" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function Queue() {
   const { t } = useTranslation()
-  const [view, setView] = useState<'today' | 'all'>('today')
-  const [type, setType] = useState<TaskType | ''>('')
+  const [params, setParams] = useSearchParams()
+  const view = (params.get('view') ?? 'today') as 'today' | 'all'
+  const type = (params.get('type') ?? '') as TaskType | ''
+  const campaign = params.get('campaign') ?? ''
+  const setParam = (key: string, value: string) =>
+    setParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (value) next.set(key, value)
+      else next.delete(key)
+      return next
+    })
   const { data: summary } = useQuery({
     queryKey: ['tasks', 'summary'],
     queryFn: getTaskSummary,
     refetchInterval: 30_000,
   })
-  const { data: tasks, error } = useQuery({
-    queryKey: ['tasks', view, type],
-    queryFn: () => getTasks(view, type ? [type] : []),
+  const {
+    data: tasks,
+    error,
+    isLoading,
+  } = useQuery({
+    queryKey: ['tasks', view, type, campaign],
+    queryFn: () => getTasks(view, type ? [type] : [], campaign),
     refetchInterval: 30_000,
+    placeholderData: keepPreviousData,
   })
-
+  const filtered = Boolean(type || campaign)
   return (
-    <div className="grid max-w-6xl gap-6 xl:grid-cols-[1fr_20rem]">
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-semibold">{t('tasks.title')}</h1>
-          <div className="flex flex-wrap gap-2">
-            <Select value={type} onChange={(e) => setType(e.target.value as TaskType | '')} className="w-56">
-              <option value="">{t('tasks.filterAll')}</option>
-              {TYPES.map((x) => (
-                <option key={x} value={x}>
-                  {t(`taskTypes.${x}`)} {summary?.by_type[x] ? `(${summary.by_type[x]})` : ''}
-                </option>
-              ))}
-            </Select>
-            <Select
-              value={view}
-              onChange={(e) => setView(e.target.value as 'today' | 'all')}
-              className="w-48"
+    <div className="space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <Select
+          value={type}
+          onChange={(e) => setParam('type', e.target.value)}
+          className="sm:w-56"
+          aria-label={t('taskQueue.type')}
+        >
+          <option value="">{t('tasks.filterAll')}</option>
+          {TYPES.map((x) => (
+            <option key={x} value={x}>
+              {t(`taskTypes.${x}`)} {summary?.by_type[x] ? `(${summary.by_type[x]})` : ''}
+            </option>
+          ))}
+        </Select>
+        {(summary?.campaigns?.length ?? 0) > 0 && (
+          <Select
+            value={campaign}
+            onChange={(e) => setParam('campaign', e.target.value)}
+            className="sm:w-56"
+            aria-label={t('taskQueue.campaign')}
+          >
+            <option value="">{t('taskQueue.allCampaigns')}</option>
+            {summary!.campaigns!.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.open})
+              </option>
+            ))}
+          </Select>
+        )}
+        <Select
+          value={view}
+          onChange={(e) => setParam('view', e.target.value === 'today' ? '' : e.target.value)}
+          className="sm:w-48"
+          aria-label={t('taskQueue.period')}
+        >
+          <option value="today">{t('tasks.today')}</option>
+          <option value="all">{t('tasks.all')}</option>
+        </Select>
+      </div>
+      {summary && (
+        <p className="text-sm text-slate-600">
+          {t('tasks.summary', { total: summary.total_due, overdue: summary.overdue })}
+          {summary.lead_sla_breached > 0 && (
+            <Link
+              to="/leads?overdue=1"
+              className="ml-3 font-medium text-red-700 underline-offset-2 hover:underline"
             >
-              <option value="today">{t('tasks.today')}</option>
-              <option value="all">{t('tasks.all')}</option>
-            </Select>
+              {t('tasks.slaBreached', { count: summary.lead_sla_breached })}
+            </Link>
+          )}
+        </p>
+      )}
+      <ErrorText error={error} />
+      {isLoading && <SkeletonCards />}
+      {tasks && tasks.length === 0 && (
+        <Card>
+          <div className="py-4 text-center">
+            <p className="text-sm font-medium text-slate-700">
+              {filtered ? t('taskQueue.emptyFiltered') : t('tasks.empty')}
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              {filtered ? t('taskQueue.emptyFilteredHint') : t('taskQueue.emptyHint')}
+            </p>
+            {filtered ? (
+              <Button
+                variant="secondary"
+                className="mt-3"
+                onClick={() =>
+                  setParams((prev) => {
+                    const next = new URLSearchParams(prev)
+                    next.delete('type')
+                    next.delete('campaign')
+                    return next
+                  })
+                }
+              >
+                {t('taskQueue.clearFilters')}
+              </Button>
+            ) : (
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
+                <Link to="/leads" className="text-sm text-teal-800 hover:underline">
+                  {t('taskQueue.goLeads')}
+                </Link>
+                {view === 'today' && (
+                  <button
+                    className="text-sm text-teal-800 hover:underline"
+                    onClick={() => setParam('view', 'all')}
+                  >
+                    {t('taskQueue.showFuture')}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-        </div>
-        {summary && (
-          <p className="text-sm text-slate-600">
-            {t('tasks.summary', { total: summary.total_due, overdue: summary.overdue })}
-            {summary.lead_sla_breached > 0 && (
-              <span className="ml-3 font-medium text-red-700">
-                {t('tasks.slaBreached', { count: summary.lead_sla_breached })}
+        </Card>
+      )}
+      <div className="space-y-3">
+        {tasks?.map((task) => (
+          <TaskCard key={task.id} task={task} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function DoneRow({ task }: { task: Task }) {
+  const { t } = useTranslation()
+  const [details, setDetails] = useState(false)
+  return (
+    <li className="border-t border-slate-100 py-3 first:border-t-0">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <TaskHead task={task} />
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+            {task.status === 'cancelled' ? (
+              <Badge tone="bad">{t('taskQueue.cancelled')}</Badge>
+            ) : (
+              task.outcome && (
+                <Badge tone={task.outcome === 'booked' || task.outcome === 'confirmed' ? 'good' : 'neutral'}>
+                  {t(`outcomes.${task.outcome}`)}
+                </Badge>
+              )
+            )}
+            {task.outcome_reason && (
+              <span className="text-slate-600">
+                {t(`reasons.${task.outcome_reason}`, { defaultValue: task.outcome_reason })}
               </span>
             )}
-          </p>
-        )}
-        <ErrorText error={error} />
-        {tasks && tasks.length === 0 && (
-          <Card>
-            <p className="text-sm text-slate-500">{t('tasks.empty')}</p>
-          </Card>
-        )}
-        <div className="space-y-3">
-          {tasks?.map((task) => (
-            <TaskCard key={task.id} task={task} />
+            {task.cancel_reason && <span className="text-slate-600">{task.cancel_reason}</span>}
+          </div>
+          <div className="mt-0.5 text-xs text-slate-500">
+            <span className="tabular-nums">{formatDateTime(task.completed_at ?? null)}</span>
+            {' · '}
+            {task.completed_by_name ?? t('taskQueue.bySystem')}
+            {task.campaign_name && ` · ${task.campaign_name}`}
+          </div>
+          {task.note && (
+            <button
+              className="mt-1 text-xs text-teal-800 hover:underline"
+              onClick={() => setDetails(!details)}
+            >
+              {details ? '▾' : '▸'} {t('tasks.note')}
+            </button>
+          )}
+          {details && task.note && (
+            <p className="mt-1 text-sm whitespace-pre-line text-slate-700">{task.note}</p>
+          )}
+          <AttemptHistory task={task} />
+        </div>
+      </div>
+    </li>
+  )
+}
+
+/** "Bajarilganlar": what was closed today / this week, by whom. */
+function Done() {
+  const { t } = useTranslation()
+  const [period, setPeriod] = useState<'today' | 'week'>('today')
+  const [userId, setUserId] = useState('')
+  const [offset, setOffset] = useState(0)
+  const { data, error, isLoading } = useQuery({
+    queryKey: ['tasks', 'done', period, userId, offset],
+    queryFn: () => getDoneTasks(period, userId, offset),
+    placeholderData: keepPreviousData,
+  })
+  const everyone = data?.by_user.reduce((sum, b) => sum + b.count, 0) ?? 0
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex gap-1" role="group" aria-label={t('taskQueue.period')}>
+          {(['today', 'week'] as const).map((p) => (
+            <Button
+              key={p}
+              variant={period === p ? 'primary' : 'secondary'}
+              aria-pressed={period === p}
+              onClick={() => {
+                setPeriod(p)
+                setOffset(0)
+              }}
+            >
+              {t(`taskQueue.periods.${p}`)}
+            </Button>
           ))}
         </div>
+        <Select
+          value={userId}
+          onChange={(e) => {
+            setUserId(e.target.value)
+            setOffset(0)
+          }}
+          className="sm:w-64"
+          aria-label={t('taskQueue.operator')}
+        >
+          <option value="">
+            {t('taskQueue.allOperators')} ({everyone})
+          </option>
+          {data?.by_user
+            .filter((b) => b.user_id)
+            .map((b) => (
+              <option key={b.user_id} value={b.user_id!}>
+                {b.name} ({b.count})
+              </option>
+            ))}
+        </Select>
+      </div>
+      {data && data.by_user.length > 0 && (
+        <div className="flex flex-wrap gap-2 text-xs">
+          {data.by_user.map((b) => (
+            <span key={b.user_id ?? 'system'} className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
+              {b.name ?? t('taskQueue.bySystem')}: <strong className="tabular-nums">{b.count}</strong>
+            </span>
+          ))}
+        </div>
+      )}
+      <ErrorText error={error} />
+      {isLoading && <SkeletonCards />}
+      <Card>
+        {data && data.items.length === 0 ? (
+          <div className="py-4 text-center text-sm text-slate-500">{t('taskQueue.doneEmpty')}</div>
+        ) : (
+          <ul>
+            {data?.items.map((task) => (
+              <DoneRow key={task.id} task={task} />
+            ))}
+          </ul>
+        )}
+        {data && data.total > 100 && (
+          <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
+            <span>{t('audit.total', { count: data.total })}</span>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                disabled={offset === 0}
+                onClick={() => setOffset(Math.max(0, offset - 100))}
+              >
+                {t('audit.prev')}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={offset + 100 >= data.total}
+                onClick={() => setOffset(offset + 100)}
+              >
+                {t('audit.next')}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+export default function TasksPage() {
+  const { t } = useTranslation()
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('tab') === 'done' ? 'done' : 'queue'
+  return (
+    <div className="grid max-w-6xl gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="min-w-0 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold">{t('tasks.title')}</h1>
+          <div className="flex rounded-md border border-slate-300 bg-white p-0.5" role="tablist">
+            {(['queue', 'done'] as const).map((x) => (
+              <button
+                key={x}
+                role="tab"
+                aria-selected={tab === x}
+                className={`rounded px-3 py-1.5 text-sm font-medium ${
+                  tab === x ? 'bg-teal-700 text-white' : 'text-slate-700 hover:bg-slate-50'
+                }`}
+                onClick={() => setParams(x === 'done' ? { tab: 'done' } : {})}
+              >
+                {t(`taskQueue.tabs.${x}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+        {tab === 'queue' ? <Queue /> : <Done />}
       </div>
       <div>
         <ShiftNotes />

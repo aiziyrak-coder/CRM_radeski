@@ -8,8 +8,9 @@ from app.core.deps import SessionDep, client_ip, require_roles
 from app.modules.audit import service as audit
 from app.modules.patients import service
 from app.modules.patients.constants import FERGANA_DISTRICTS
-from app.modules.patients.models import Patient, PatientKind, PatientPhone
+from app.modules.patients.models import Patient, PatientKind, PatientPhone, Source
 from app.modules.patients.schemas import (
+    CategoryIn,
     DoNotCallIn,
     DuplicateCandidate,
     DuplicateCheckIn,
@@ -18,9 +19,11 @@ from app.modules.patients.schemas import (
     PatientListItem,
     PatientOut,
     PatientPage,
+    PatientSort,
     PatientUpdate,
     PhoneIn,
     PhoneUpdate,
+    TagCount,
 )
 from app.modules.users.models import Role, User
 
@@ -57,6 +60,12 @@ async def districts(_: Staff) -> list[str]:
     return list(FERGANA_DISTRICTS)
 
 
+@router.get("/meta/tags")
+async def tags(session: SessionDep, _: Staff) -> list[TagCount]:
+    """Tags in use, most frequent first (filter and autocomplete on the card)."""
+    return [TagCount(tag=t, count=n) for t, n in await service.tag_counts(session)]
+
+
 @router.get("")
 async def list_patients(
     session: SessionDep,
@@ -64,11 +73,28 @@ async def list_patients(
     q: Annotated[str | None, Query(max_length=100)] = None,
     kind: PatientKind | None = None,
     category: Annotated[str | None, Query(max_length=50)] = None,
+    # a district name, or "-" for records without one
+    district: Annotated[str | None, Query(max_length=100)] = None,
+    source: Source | None = None,
+    tag: Annotated[str | None, Query(max_length=50)] = None,
+    has_phone: bool | None = None,
+    sort: PatientSort | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PatientPage:
-    total, rows = await service.search(session, q, kind, limit, offset, category)
-    return PatientPage(total=total, items=[PatientListItem.model_validate(p) for p in rows])
+    """TZ 5: no export here — the list pages through at most 100 rows at a time."""
+    filters = service.PatientFilters(
+        kind=kind, category=category, district=district, source=source, tag=tag,
+        has_phone=has_phone,
+    )  # fmt: skip
+    total, rows = await service.search(session, q, kind, limit, offset, filters=filters, sort=sort)
+    upcoming = await service.next_visits(session, [p.id for p in rows])
+    items = []
+    for p in rows:
+        item = PatientListItem.model_validate(p)
+        item.next_visit_at = upcoming.get(p.id)
+        items.append(item)
+    return PatientPage(total=total, items=items)
 
 
 @router.post("/check-duplicates")
@@ -132,7 +158,9 @@ async def get_patient(
         ip=client_ip(request),
     )
     await session.commit()
-    return PatientOut.model_validate(patient)
+    out = PatientOut.model_validate(patient)
+    out.first_contact_at, out.first_contact_channel = await service.first_contact(session, patient)
+    return out
 
 
 @router.patch("/{patient_id}")
@@ -183,6 +211,49 @@ async def set_do_not_call(
     )
     await session.commit()
     return PatientOut.model_validate(patient)
+
+
+# --- diagnosis categories (TZ 4.1: shown and edited on the card) ---------------------------
+
+
+async def _categories_changed(
+    session: SessionDep, request: Request, user: User, patient: Patient, before: list[str]
+) -> PatientOut:
+    audit.record(
+        session, "patient.categories", user_id=user.id, entity="patient", entity_id=patient.id,
+        before={"categories": before}, after={"categories": patient.categories},
+        ip=client_ip(request),
+    )  # fmt: skip
+    await session.commit()
+    return PatientOut.model_validate(patient)
+
+
+@router.post("/{patient_id}/categories")
+async def add_category(
+    patient_id: uuid.UUID, body: CategoryIn, request: Request, session: SessionDep, user: Staff
+) -> PatientOut:
+    patient = await _get_patient(session, patient_id)
+    _live_or_409(patient)
+    before = patient.categories
+    try:
+        await service.add_category(session, patient, body.code)
+    except service.CategoryError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.code) from None
+    return await _categories_changed(session, request, user, patient, before)
+
+
+@router.delete("/{patient_id}/categories/{code}")
+async def remove_category(
+    patient_id: uuid.UUID, code: str, request: Request, session: SessionDep, user: Staff
+) -> PatientOut:
+    patient = await _get_patient(session, patient_id)
+    _live_or_409(patient)
+    before = patient.categories
+    try:
+        await service.remove_category(session, patient, code)
+    except service.CategoryError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=exc.code) from None
+    return await _categories_changed(session, request, user, patient, before)
 
 
 # --- phones -----------------------------------------------------------------------------------

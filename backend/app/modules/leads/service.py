@@ -5,18 +5,59 @@ import uuid
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import object_session
 
 from app.core import clinic_time
 from app.core.config import get_settings
 from app.core.events import emit
 from app.core.text import search_key
-from app.modules.leads.models import Lead, LeadChannel, LeadStage
+from app.modules.leads.models import Lead, LeadChannel, LeadStage, LeadStageChange
 from app.modules.patients import service as patients_service
 from app.modules.patients.models import Patient, PatientKind, PatientPhone, Source
 from app.modules.tasks.models import REASONS
 
 # a lost inquiry's reason: the TZ 4.5 list, or the call result that ended it
 LOST_REASONS = (*REASONS, "refused", "wrong_number", "do_not_call")
+
+# TZ 4.4: the ad source is mandatory. Staff type it in; inquiries that arrive by themselves get
+# it from the channel they came through.
+CHANNEL_SOURCE: dict[LeadChannel, Source] = {
+    LeadChannel.WEBSITE: Source.WEBSITE,
+    LeadChannel.TELEGRAM: Source.TELEGRAM,
+    LeadChannel.INSTAGRAM: Source.INSTAGRAM,
+}
+
+
+def default_source(channel: LeadChannel, patient: Patient | None) -> Source:
+    """A call from a number we already know is a returning patient (or their first source);
+    an unknown caller's source is asked for when the operator calls back."""
+    if channel in CHANNEL_SOURCE:
+        return CHANNEL_SOURCE[channel]
+    if patient is not None and patient.kind in (PatientKind.ACTIVE, PatientKind.LEGACY):
+        return Source.RETURNING
+    if patient is not None and patient.source is not None:
+        return patient.source
+    return Source.OTHER
+
+
+def _history(
+    session: AsyncSession | None,
+    lead: Lead,
+    old: LeadStage | None,
+    new: LeadStage,
+    *,
+    user_id: uuid.UUID | None = None,
+    reason: str | None = None,
+) -> None:
+    target = session.sync_session if session is not None else object_session(lead)
+    if target is None:  # a lead that was never added to a session has no history to keep
+        return
+    target.add(
+        LeadStageChange(
+            lead_id=lead.id, old_stage=old, new_stage=new, reason=reason, user_id=user_id,
+            created_at=clinic_time.now(),
+        )
+    )  # fmt: skip
 
 
 class LeadError(Exception):
@@ -61,7 +102,7 @@ async def create_lead(
         phone=phone,
         name=name or (patient.full_name if patient else None),
         channel=channel,
-        source=source,
+        source=source or default_source(channel, patient),
         interest=interest,
         note=note,
         stage=LeadStage.NEW,
@@ -84,6 +125,7 @@ async def create_lead(
         if existing is None:
             raise
         return existing, False
+    _history(session, lead, None, LeadStage.NEW, user_id=created_by)
     await emit(session, "lead.created", lead=lead)
     return lead, True
 
@@ -128,11 +170,12 @@ async def ensure_patient(session: AsyncSession, lead: Lead, user_id: uuid.UUID |
     return patient
 
 
-def mark_contacted(lead: Lead) -> None:
+def mark_contacted(lead: Lead, user_id: uuid.UUID | None = None) -> None:
     if lead.first_response_at is None:
         lead.first_response_at = clinic_time.now()
     if lead.stage is LeadStage.NEW:
         lead.stage = LeadStage.CONTACTED
+        _history(None, lead, LeadStage.NEW, LeadStage.CONTACTED, user_id=user_id)
 
 
 async def change_stage(
@@ -158,8 +201,14 @@ async def change_stage(
         lead.lost_reason = lost_reason
     old = lead.stage
     if contacted and stage is not LeadStage.NEW:
-        mark_contacted(lead)
+        mark_contacted(lead, user_id)
+    current = lead.stage  # mark_contacted may have logged new -> contacted already
     lead.stage = stage
+    if current is not stage:
+        _history(
+            session, lead, current, stage, user_id=user_id,
+            reason=lost_reason if stage is LeadStage.LOST else None,
+        )  # fmt: skip
     if old is stage:
         return
     await emit(session, "lead.stage_changed", lead=lead, old=old, new=stage, user_id=user_id)

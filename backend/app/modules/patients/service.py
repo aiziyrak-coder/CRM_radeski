@@ -1,14 +1,23 @@
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy import Select, and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import clinic_time
 from app.core.events import emit
 from app.core.text import phone_digits_query, search_key
-from app.modules.patients.models import Patient, PatientCondition, PatientKind, PatientPhone
+from app.modules.patients.models import (
+    MANUAL_CONDITION,
+    Patient,
+    PatientCondition,
+    PatientKind,
+    PatientPhone,
+    Source,
+)
 from app.modules.patients.schemas import (
     DuplicateCandidate,
     PatientCreate,
@@ -182,21 +191,68 @@ async def remove_phone(session: AsyncSession, patient: Patient, phone: PatientPh
 
 # --- search -----------------------------------------------------------------------------------
 
+# the list's "no district" option (data-quality view: the legacy address didn't parse)
+NO_DISTRICT = "-"
 
-def _search_query(
-    q: str | None, kind: PatientKind | None, category: str | None = None
-) -> tuple[Select, Any]:
+
+@dataclass(frozen=True)
+class PatientFilters:
+    kind: PatientKind | None = None
+    category: str | None = None
+    district: str | None = None
+    source: Source | None = None
+    tag: str | None = None
+    has_phone: bool | None = None
+
+
+def _next_visit() -> Any:
+    """The patient's nearest booked visit (correlated subquery, also used for sorting)."""
+    from app.modules.scheduling.models import Appointment, AppointmentStatus
+
+    return (
+        select(func.min(Appointment.starts_at))
+        .where(
+            Appointment.patient_id == Patient.id,
+            Appointment.starts_at > clinic_time.now(),
+            Appointment.status.in_((AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED)),
+        )
+        .correlate(Patient)
+        .scalar_subquery()
+    )
+
+
+SORTS: dict[str, Callable[[], Any]] = {
+    "name": lambda: Patient.full_name,
+    "last_visit": lambda: Patient.last_visit_at.desc().nulls_last(),
+    "next_visit": lambda: _next_visit().asc().nulls_last(),
+    "created": lambda: Patient.created_at.desc(),
+    "birth_date": lambda: Patient.birth_date.asc().nulls_last(),
+}
+
+
+def _search_query(q: str | None, f: PatientFilters, sort: str | None = None) -> tuple[Select, Any]:
     stmt = select(Patient).where(_live())
-    order: Any = Patient.full_name
-    if kind:
-        stmt = stmt.where(Patient.kind == kind)
-    if category:
+    order: Any = SORTS[sort]() if sort else Patient.full_name
+    if f.kind:
+        stmt = stmt.where(Patient.kind == f.kind)
+    if f.category:
         with_category = select(PatientCondition.patient_id).where(
-            PatientCondition.category_code == category
+            PatientCondition.category_code == f.category
         )
         stmt = stmt.where(Patient.id.in_(with_category))
+    if f.district == NO_DISTRICT:
+        stmt = stmt.where(Patient.district.is_(None))
+    elif f.district:
+        stmt = stmt.where(Patient.district == f.district)
+    if f.source:
+        stmt = stmt.where(Patient.source == f.source)
+    if f.tag:
+        stmt = stmt.where(Patient.tags.contains([f.tag]))
+    if f.has_phone is not None:
+        with_phone = exists().where(PatientPhone.patient_id == Patient.id)
+        stmt = stmt.where(with_phone if f.has_phone else ~with_phone)
     if not q or not q.strip():
-        if not kind:
+        if not f.kind:
             # the cold base is ~45k nameless numbers; browse it only when asked for explicitly
             stmt = stmt.where(Patient.kind != PatientKind.COLD)
         return stmt, order
@@ -210,7 +266,8 @@ def _search_query(
     all_words = and_(*(Patient.search_key.contains(w) for w in words))
     fuzzy = Patient.search_key.op("%")(key)  # pg_trgm similarity (index-backed)
     stmt = stmt.where(or_(all_words, fuzzy))
-    return stmt, func.similarity(Patient.search_key, key).desc()
+    # the best name match first, unless the user picked a column to sort by
+    return stmt, order if sort else func.similarity(Patient.search_key, key).desc()
 
 
 async def search(
@@ -220,11 +277,105 @@ async def search(
     limit: int,
     offset: int,
     category: str | None = None,
+    *,
+    filters: PatientFilters | None = None,
+    sort: str | None = None,
 ) -> tuple[int, list[Patient]]:
-    stmt, order = _search_query(q, kind, category)
+    f = filters or PatientFilters(kind=kind, category=category)
+    stmt, order = _search_query(q, f, sort)
     total = await session.scalar(select(func.count()).select_from(stmt.subquery()))
     rows = await session.scalars(stmt.order_by(order, Patient.id).limit(limit).offset(offset))
     return total or 0, list(rows)
+
+
+async def next_visits(session: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, datetime]:
+    if not ids:
+        return {}
+    rows = await session.execute(select(Patient.id, _next_visit()).where(Patient.id.in_(ids)))
+    return {pid: at for pid, at in rows if at is not None}
+
+
+async def tag_counts(session: AsyncSession, limit: int = 100) -> list[tuple[str, int]]:
+    inner = select(func.unnest(Patient.tags).label("tag")).where(_live()).subquery()
+    rows = await session.execute(
+        select(inner.c.tag, func.count())
+        .group_by(inner.c.tag)
+        .order_by(func.count().desc(), inner.c.tag)
+        .limit(limit)
+    )
+    return [(t, n) for t, n in rows]
+
+
+# --- card extras ------------------------------------------------------------------------------
+
+
+async def first_contact(
+    session: AsyncSession, patient: Patient
+) -> tuple[datetime | None, str | None]:
+    """The earliest trace of the person: an inquiry, a call, or registration in the CRM
+    (imported records have no first-contact date unless they got in touch since)."""
+    from app.modules.leads.models import Lead
+    from app.modules.telephony.models import Call
+
+    candidates: list[tuple[datetime, str]] = []
+    lead = (
+        await session.execute(
+            select(Lead.created_at, Lead.channel)
+            .where(Lead.patient_id == patient.id)
+            .order_by(Lead.created_at)
+            .limit(1)
+        )
+    ).first()
+    if lead:
+        candidates.append((lead[0], lead[1].value))
+    call = await session.scalar(
+        select(func.min(Call.started_at)).where(Call.patient_id == patient.id)
+    )
+    if call:
+        candidates.append((call, "call"))
+    if patient.kind not in (PatientKind.LEGACY, PatientKind.COLD):
+        candidates.append((patient.created_at, "registered"))
+    if not candidates:
+        return None, None
+    return min(candidates, key=lambda c: c[0])
+
+
+class CategoryError(Exception):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+async def add_category(session: AsyncSession, patient: Patient, code: str) -> None:
+    """A diagnosis category set by staff on the card (idempotent)."""
+    from app.modules.diagnoses.categories import CATEGORY_BY_CODE
+
+    category = CATEGORY_BY_CODE.get(code)
+    if category is None:
+        raise CategoryError("unknown_category")
+    if code in patient.categories:
+        return
+    patient.conditions.append(
+        PatientCondition(
+            raw_text=category.name_uz, category_code=code, source=MANUAL_CONDITION, text_key=None
+        )
+    )
+    await session.flush()
+
+
+async def remove_category(session: AsyncSession, patient: Patient, code: str) -> None:
+    """Only categories set on the card are removed here; an imported diagnosis keeps its text
+    and is re-categorised on the diagnoses page (the mapping applies to every patient)."""
+    manual = [
+        c for c in patient.conditions if c.category_code == code and c.source == MANUAL_CONDITION
+    ]
+    if not manual:
+        if code in patient.categories:
+            raise CategoryError("category_from_import")
+        return
+    for c in manual:
+        patient.conditions.remove(c)
+    await session.flush()
 
 
 # --- merge ------------------------------------------------------------------------------------

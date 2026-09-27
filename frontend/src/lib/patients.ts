@@ -45,11 +45,17 @@ export type PatientListItem = {
   id: string
   full_name: string
   birth_date: string | null
+  gender?: Gender
   district: string | null
   kind: PatientKind
+  source?: Source | null
   do_not_call: boolean
   tags: string[]
+  /** diagnosis category codes (import mapping + set on the card) */
+  categories?: string[]
   last_visit_at: string | null
+  /** nearest booked visit (patients list only) */
+  next_visit_at?: string | null
   phones: Phone[]
 }
 
@@ -71,6 +77,10 @@ export type Patient = PatientListItem & {
   do_not_call_reason: string | null
   merged_into_id: string | null
   created_at: string
+  categories: string[]
+  /** TZ 4.1: the first inquiry / call / registration and its channel */
+  first_contact_at?: string | null
+  first_contact_channel?: string | null
 }
 
 export type DuplicateCandidate = PatientListItem & { reasons: ('phone' | 'name')[] }
@@ -87,18 +97,53 @@ export type PatientInput = {
   phones: { number: string; note?: string | null }[]
 }
 
-export function searchPatients(params: {
+export type PatientSort = 'name' | 'last_visit' | 'next_visit' | 'created' | 'birth_date'
+export const PATIENT_SORTS: PatientSort[] = ['name', 'last_visit', 'next_visit', 'created', 'birth_date']
+/** the list's "no district" filter value (backend patients/service.py NO_DISTRICT) */
+export const NO_DISTRICT = '-'
+/** set by the importer on records with an implausible phone or birth date (TZ 4.8.4) */
+export const CHECK_TAG = 'tekshirish-kerak'
+
+export type PatientQuery = {
   q?: string
   kind?: PatientKind | ''
   category?: string
+  district?: string
+  source?: Source | ''
+  tag?: string
+  hasPhone?: '' | 'yes' | 'no'
+  sort?: PatientSort | ''
   offset: number
   limit: number
-}) {
+}
+
+export function searchPatients(params: PatientQuery) {
   const qs = new URLSearchParams({ offset: String(params.offset), limit: String(params.limit) })
   if (params.q?.trim()) qs.set('q', params.q.trim())
   if (params.kind) qs.set('kind', params.kind)
   if (params.category) qs.set('category', params.category)
+  if (params.district) qs.set('district', params.district)
+  if (params.source) qs.set('source', params.source)
+  if (params.tag) qs.set('tag', params.tag)
+  if (params.hasPhone) qs.set('has_phone', String(params.hasPhone === 'yes'))
+  if (params.sort) qs.set('sort', params.sort)
   return api<{ total: number; items: PatientListItem[] }>(`/patients?${qs}`)
+}
+
+export const getTags = () => api<{ tag: string; count: number }[]>('/patients/meta/tags')
+
+export const addCategory = (id: string, code: string) =>
+  api<Patient>(`/patients/${id}/categories`, { method: 'POST', body: { code } })
+export const removeCategory = (id: string, code: string) =>
+  api<Patient>(`/patients/${id}/categories/${encodeURIComponent(code)}`, { method: 'DELETE' })
+
+/** full years on `today` (YYYY-MM-DD); null without a birth date */
+export function ageOf(birthDate: string | null, today: string = clinicDate()): number | null {
+  if (!birthDate) return null
+  const [by, bm, bd] = birthDate.split('-').map(Number)
+  const [ty, tm, td] = today.split('-').map(Number)
+  const age = ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0)
+  return age >= 0 ? age : null
 }
 
 export const getPatient = (id: string) => api<Patient>(`/patients/${id}`)
@@ -126,6 +171,11 @@ export interface TimelineEvent {
   seconds: number | null
   /** phone: who handled the call (decides whether an operator may play the recording) */
   user_id?: string | null
+  /** what a click opens: the appointment panel, the call's AI analysis, the inquiry */
+  appointment_id?: string | null
+  call_id?: string | null
+  has_analysis?: boolean
+  lead_id?: string | null
 }
 
 export const getTimeline = (id: string, lang: Language) =>
@@ -134,8 +184,10 @@ export const getTimeline = (id: string, lang: Language) =>
 export const createPatient = (body: PatientInput, force = false) =>
   api<Patient>(`/patients${force ? '?force=true' : ''}`, { method: 'POST', body })
 
-export const updatePatient = (id: string, body: Partial<Omit<PatientInput, 'phones'>>) =>
-  api<Patient>(`/patients/${id}`, { method: 'PATCH', body })
+export const updatePatient = (
+  id: string,
+  body: Partial<Omit<PatientInput, 'phones'>> & { tags?: string[] },
+) => api<Patient>(`/patients/${id}`, { method: 'PATCH', body })
 
 export const addPhone = (id: string, body: { number: string; note?: string | null; is_primary?: boolean }) =>
   api<Patient>(`/patients/${id}/phones`, { method: 'POST', body })
@@ -160,7 +212,7 @@ export const getDistricts = () => api<string[]>('/patients/meta/districts')
 // set by the legacy importer (backend app/importer/legacy.py)
 export const UNKNOWN_NAME = "Ismi noma'lum"
 export const TAG_LABELS: Record<string, string> = {
-  'tekshirish-kerak': 'patients.tagCheck',
+  [CHECK_TAG]: 'patients.tagCheck',
   ismsiz: 'patients.tagNoName',
 }
 

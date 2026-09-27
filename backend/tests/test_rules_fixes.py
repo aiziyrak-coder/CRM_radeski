@@ -111,7 +111,11 @@ async def test_missed_call_after_the_callback_was_done_gets_a_new_task(
 
 async def test_answered_call_resolves_the_inquiry_calls(client: AsyncClient, op: dict) -> None:
     lead = (
-        await client.post("/api/leads", json={"phone": "900001234", "name": "Yangi"}, headers=op)
+        await client.post(
+            "/api/leads",
+            json={"source": "other", "phone": "900001234", "name": "Yangi"},
+            headers=op,
+        )
     ).json()
     lead_id = uuid.UUID(lead["id"])
     await call_event(pbx_id="2.1", status=CallStatus.MISSED, phone="+998900001234", lead_id=lead_id)
@@ -214,7 +218,9 @@ async def test_lead_stage_goes_through_the_service(
 ) -> None:
     changes = spy_on(monkeypatch, "lead.stage_changed")
 
-    lost = (await client.post("/api/leads", json={"phone": "900001111"}, headers=op)).json()
+    lost = (
+        await client.post("/api/leads", json={"source": "other", "phone": "900001111"}, headers=op)
+    ).json()
     url = f"/api/leads/{lost['id']}"
     assert (await client.patch(url, json={"stage": "lost"}, headers=op)).json()[
         "detail"
@@ -226,7 +232,9 @@ async def test_lead_stage_goes_through_the_service(
     [cancelled] = await tasks_of(TaskType.NEW_LEAD, TaskStatus.CANCELLED)
     assert str(cancelled.lead_id) == lost["id"]
 
-    booked = (await client.post("/api/leads", json={"phone": "900002222"}, headers=op)).json()
+    booked = (
+        await client.post("/api/leads", json={"source": "other", "phone": "900002222"}, headers=op)
+    ).json()
     resp = await client.patch(f"/api/leads/{booked['id']}", json={"stage": "booked"}, headers=op)
     assert resp.json()["stage"] == "booked"
     [done] = await tasks_of(TaskType.NEW_LEAD, TaskStatus.DONE)
@@ -235,7 +243,9 @@ async def test_lead_stage_goes_through_the_service(
 
 
 async def test_refused_inquiry_closes_its_other_calls(client: AsyncClient, op: dict) -> None:
-    lead = (await client.post("/api/leads", json={"phone": "900003333"}, headers=op)).json()
+    lead = (
+        await client.post("/api/leads", json={"source": "other", "phone": "900003333"}, headers=op)
+    ).json()
     await call_event(
         pbx_id="3.1", status=CallStatus.MISSED, phone="+998900003333", lead_id=uuid.UUID(lead["id"])
     )

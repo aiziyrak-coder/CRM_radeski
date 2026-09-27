@@ -94,7 +94,9 @@ async def test_booking_closes_tasks_and_books_lead(
 ) -> None:
     lead = (
         await client.post(
-            "/api/leads", json={"phone": "905551122", "name": "Yangi Mijoz"}, headers=op
+            "/api/leads",
+            json={"source": "other", "phone": "905551122", "name": "Yangi Mijoz"},
+            headers=op,
         )
     ).json()
     patient_id = (await client.post(f"/api/leads/{lead['id']}/patient", headers=op)).json()[
@@ -267,7 +269,9 @@ async def test_do_not_call_flags_patient(client: AsyncClient, clinic: dict, op: 
 
 async def test_lost_lead_and_reactivation_generators(client: AsyncClient, op: dict) -> None:
     await client.post(
-        "/api/leads", json={"phone": "905551122", "name": "Eski Murojaat"}, headers=op
+        "/api/leads",
+        json={"source": "other", "phone": "905551122", "name": "Eski Murojaat"},
+        headers=op,
     )
     async with SessionLocal() as s:
         await s.execute(update(Lead).values(created_at=datetime.now(UTC) - timedelta(days=2)))
@@ -455,7 +459,7 @@ async def test_reports(client: AsyncClient, clinic: dict, op: dict) -> None:
     await client.post(
         f"/api/tasks/{task_id}/result", json={"outcome": "refused", "reason": "price"}, headers=op
     )
-    await client.post("/api/leads", json={"phone": "905551122"}, headers=op)
+    await client.post("/api/leads", json={"source": "other", "phone": "905551122"}, headers=op)
 
     daily = (await client.get("/api/reports/daily", headers=op)).json()
     assert daily["outbound_attempts"] == 1 and daily["reasons"] == {"price": 1}
@@ -493,7 +497,12 @@ async def test_patient_timeline_joins_every_touchpoint(
     lead = (
         await client.post(
             "/api/leads",
-            json={"phone": "905551133", "name": "Tasma Bemor", "interest": "akne"},
+            json={
+                "source": "other",
+                "phone": "905551133",
+                "name": "Tasma Bemor",
+                "interest": "akne",
+            },
             headers=op,
         )
     ).json()
@@ -539,7 +548,9 @@ async def test_merge_carries_visits_calls_and_leads(
     client: AsyncClient, clinic: dict, op: dict
 ) -> None:
     lead = (
-        await client.post("/api/leads", json={"phone": "905551144", "name": "Dubl"}, headers=op)
+        await client.post(
+            "/api/leads", json={"source": "other", "phone": "905551144", "name": "Dubl"}, headers=op
+        )
     ).json()
     source = (await client.post(f"/api/leads/{lead['id']}/patient", headers=op)).json()[
         "patient_id"

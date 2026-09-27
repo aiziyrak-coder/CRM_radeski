@@ -127,6 +127,8 @@ class Task(UUIDPk, Base):
     completed_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    # a supervisor took the task off the queue (why, in their words)
+    cancel_reason: Mapped[str | None] = mapped_column(String(255))
 
 
 class TaskAttempt(UUIDPk, Base):
