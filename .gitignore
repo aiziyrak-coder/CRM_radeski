@@ -17,3 +17,4 @@ backups/
 cron.log
 import-problems*.csv
 deploy.log
+.claude/worktrees/
