@@ -1,7 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { formatAt, getCallAnalysis, markFlagsReviewed, type CallAnalysis } from '../lib/ai'
+import {
+  errorKey,
+  formatAt,
+  getCallAnalysis,
+  getCriteria,
+  markFlagsReviewed,
+  type CallAnalysis,
+} from '../lib/ai'
+import { useAuth } from '../lib/auth-context'
 import { getScripts } from '../lib/ops'
 import { recordingUrl } from '../lib/telephony'
 import { Badge, Button, ErrorText, Modal } from './ui'
@@ -47,14 +55,6 @@ function useSeekableRecording(callId: string) {
   return { seek, player, error }
 }
 
-/** Why an analysis was skipped or failed: the worker stores a code or a raw exception message. */
-function errorKey(error: string): string {
-  if (error === 'too_short' || error === 'no_speech') return error
-  if (/budget/i.test(error)) return 'budget'
-  if (/OPENAI_API_KEY/.test(error)) return 'disabled'
-  return 'generic'
-}
-
 function At({ at, onSeek }: { at: number | null; onSeek: (at: number | null) => void }) {
   if (at === null) return null
   return (
@@ -71,6 +71,14 @@ function Body({ a, canAck }: { a: CallAnalysis; canAck: boolean }) {
   const ack = useMutation({
     mutationFn: () => markFlagsReviewed(a.call_id),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['ai'] }),
+  })
+  const { user } = useAuth()
+  // managers read the editable criteria list: it names the ones a supervisor added
+  const { data: criteria = [] } = useQuery({
+    queryKey: ['ai', 'criteria'],
+    queryFn: getCriteria,
+    staleTime: 600_000,
+    enabled: ['supervisor', 'owner', 'admin'].includes(user?.role ?? ''),
   })
   const { data: scripts = [] } = useQuery({
     queryKey: ['scripts'],
@@ -94,7 +102,11 @@ function Body({ a, canAck }: { a: CallAnalysis; canAck: boolean }) {
   const conversation =
     scripts.find((s) => s.code === a.conversation_type && s.language === lang) ??
     scripts.find((s) => s.code === a.conversation_type)
-  const criterionName = (code: string) => t(`ai.criteria.${code}`, { defaultValue: code })
+  const criterionName = (code: string) => {
+    const c = criteria.find((x) => x.code === code)
+    if (c) return lang === 'ru' ? c.name_ru : c.name_uz
+    return t(`ai.criteria.${code}`, { defaultValue: code })
+  }
   return (
     <div className="space-y-4 text-sm">
       <div className="flex flex-wrap items-center gap-3">

@@ -7,19 +7,22 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, select
 
 from app.core import clinic_time
 from app.core.config import get_settings
 from app.core.deps import SessionDep, require_roles
+from app.core.text import phone_digits_query, search_key
 from app.modules.ai.models import CallAnalysis
 from app.modules.leads.models import OPEN_STAGES, Lead
 from app.modules.leads.service import find_patient_by_phone
 from app.modules.patients.models import Patient
+from app.modules.reports import service as reports
 from app.modules.scheduling.models import ACTIVE_STATUSES, Appointment
 from app.modules.tasks.models import Task, TaskStatus
 from app.modules.telephony import service
 from app.modules.telephony.models import (
+    UNANSWERED_INBOUND,
     Call,
     CallDirection,
     CallStatus,
@@ -228,6 +231,141 @@ async def calls(
         )
         for c, patient_name, user_name, ai_status, ai_score, flags in await session.execute(stmt)
     ]
+
+
+class CallLogItem(CallOut):
+    task_type: str | None = None
+    task_outcome: str | None = None  # the operator's recorded result of the call's task
+    task_outcome_reason: str | None = None
+    ai_outcome: str | None = None  # what the AI analysis suggested
+    called_back_at: datetime | None = None  # missed inbound: first call back to the number
+
+
+class CallLogSummary(BaseModel):
+    total: int
+    inbound: int
+    outbound: int
+    answered: int
+    missed: int  # unanswered inbound (missed, abandoned, after hours)
+    missed_not_called_back: int
+    outbound_answered: int
+    avg_wait_sec: int | None
+    talk_minutes: int
+
+
+class CallLogPage(BaseModel):
+    total: int
+    items: list[CallLogItem]
+    summary: CallLogSummary
+
+
+MAX_LOG_DAYS = 92
+
+
+@router.get("/call-log")
+async def call_log(
+    session: SessionDep,
+    user: Viewer,
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+    direction: CallDirection | None = None,
+    call_status: Annotated[CallStatus | Literal["unanswered"] | None, Query(alias="status")] = None,
+    user_id: uuid.UUID | None = None,
+    who: Literal["all", "mine"] = "all",
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> CallLogPage:
+    """TZ 4.7 call journal: a date range with filters, a page of calls and the range's totals."""
+    date_to = date_to or clinic_time.today()
+    date_from = date_from or date_to
+    if not (
+        2000 <= date_from.year <= 2100
+        and 2000 <= date_to.year <= 2100
+        and 0 <= (date_to - date_from).days <= MAX_LOG_DAYS
+    ):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad_range")
+    start, end = clinic_time.day_bounds(date_from)[0], clinic_time.day_bounds(date_to)[1]
+    where = [Call.started_at >= start, Call.started_at < end]
+    if direction:
+        where.append(Call.direction == direction)
+    if call_status == "unanswered":
+        where += [Call.direction == CallDirection.IN, Call.status.in_(UNANSWERED_INBOUND)]
+    elif call_status:
+        where.append(Call.status == call_status)
+    if who == "mine":
+        where.append(Call.user_id == user.id)
+    elif user_id:
+        where.append(Call.user_id == user_id)
+    if q and q.strip():
+        if digits := phone_digits_query(q):
+            where.append(Call.phone.contains(digits) | Call.caller_raw.contains(digits))
+        elif words := search_key(q).split():
+            where.append(
+                Call.patient_id.in_(
+                    select(Patient.id).where(*(Patient.search_key.contains(w) for w in words))
+                )
+            )
+    callback = reports.first_callback_at()
+    missed = and_(Call.direction == CallDirection.IN, Call.status.in_(UNANSWERED_INBOUND))
+    inbound = Call.direction == CallDirection.IN
+    answered = Call.status == CallStatus.ANSWERED
+    totals = (
+        await session.execute(
+            select(
+                func.count(),
+                func.count().filter(inbound),
+                func.count().filter(~inbound),
+                func.count().filter(inbound, answered),
+                func.count().filter(missed),
+                func.count().filter(missed, Call.phone.is_not(None), callback.is_(None)),
+                func.count().filter(~inbound, answered),
+                func.avg(Call.wait_seconds).filter(inbound, Call.wait_seconds.is_not(None)),
+                func.coalesce(func.sum(Call.talk_seconds), 0),
+            ).where(*where)
+        )
+    ).one()
+    total, n_in, n_out, n_ans, n_missed, not_back, out_ans, avg_wait, talk = totals
+    stmt = (
+        select(
+            Call, Patient.full_name, User.full_name, CallAnalysis.status, CallAnalysis.score,
+            CallAnalysis.has_red_flags, CallAnalysis.suggested_outcome, Task.type, Task.outcome,
+            Task.outcome_reason, case((missed, callback), else_=None),
+        )
+        .outerjoin(Patient, Patient.id == Call.patient_id)
+        .outerjoin(User, User.id == Call.user_id)
+        .outerjoin(CallAnalysis, CallAnalysis.call_id == Call.id)
+        .outerjoin(Task, Task.id == Call.task_id)
+        .where(*where)
+        .order_by(Call.started_at.desc(), Call.id)
+        .limit(limit)
+        .offset(offset)
+    )  # fmt: skip
+    items = [
+        CallLogItem(
+            **{f: getattr(c, f) for f in CallOut.model_fields if hasattr(c, f)},
+            patient_name=patient_name, user_name=user_name,
+            ai_status=ai_status.value if ai_status else None, ai_score=ai_score,
+            ai_red_flags=bool(flags), ai_outcome=ai_outcome,
+            task_type=task_type.value if task_type else None,
+            task_outcome=task_outcome.value if task_outcome else None,
+            task_outcome_reason=reason, called_back_at=back,
+        )
+        for (
+            c, patient_name, user_name, ai_status, ai_score, flags, ai_outcome, task_type,
+            task_outcome, reason, back,
+        ) in await session.execute(stmt)
+    ]  # fmt: skip
+    return CallLogPage(
+        total=total,
+        items=items,
+        summary=CallLogSummary(
+            total=total, inbound=n_in, outbound=n_out, answered=n_ans, missed=n_missed,
+            missed_not_called_back=not_back, outbound_answered=out_ans,
+            avg_wait_sec=round(float(avg_wait)) if avg_wait is not None else None,
+            talk_minutes=round(talk / 60),
+        ),
+    )  # fmt: skip
 
 
 @router.get("/calls/{call_id}/recording")
