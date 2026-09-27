@@ -91,62 +91,27 @@ Muammoli qatorlar (xato telefon yoki sana) `data/legacy/import-problems.csv` fay
 
 ## 3. Domen va SSL (sudo kerak, bu qadamni server egasi bajaradi)
 
-1. DNS: `crm.devflix.uz` uchun A yozuvi → `87.192.230.208`.
-2. **Yangi** nginx faylini yarating. Mavjud fayllarga tegmang:
+DNS: `crm.devflix.uz` uchun A yozuvi → `87.192.230.208` (2026-09-27 da ulangan).
+
+Hammasi bitta skript bilan, u faqat shu domen uchun **yangi** fayl qo'shadi, boshqa saytlarga tegmaydi,
+har qadamdan oldin `nginx -t` qiladi va nginx'ni faqat `reload` qiladi (xato bo'lsa o'z o'zgarishini
+qaytaradi):
 
 ```bash
-sudo nano /etc/nginx/sites-available/crm.devflix.uz
+cd /home/radeski-crm && sudo bash scripts/install-nginx.sh
 ```
 
-```nginx
-server {
-    listen 80;
-    server_name crm.devflix.uz;
-    client_max_body_size 50m;
+Skript: HTTP sayt → `certbot certonly --webroot` (so'ralsa hisobni tanlang) → HTTPS + HTTP'dan
+yo'naltirish + HSTS. Sertifikat certbot tomonidan avtomatik yangilanadi.
 
-    location / {
-        proxy_pass http://127.0.0.1:9250;
-        proxy_http_version 1.1;
-        proxy_set_header Host              $host;
-        proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        # WebSocket: kiruvchi qo'ng'iroq popup'i, jonli vazifalar
-        proxy_set_header Upgrade    $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_read_timeout 300s;
-    }
-}
-```
+Bu serverga xos ikki narsa (skriptda hisobga olingan):
+- ayrim saytlar `listen 192.168.0.101:80/443` bilan aniq IP'da tinglaydi — nginx bunday IP'ga kelgan
+  so'rovni faqat shu IP'ni ko'rsatgan bloklar orasidan tanlaydi, shuning uchun CRM bloki ham
+  `192.168.0.101` ni aniq ko'rsatadi (aks holda Let's Encrypt tekshiruvi boshqa saytga tushib 404 beradi);
+- ofis ichidan (LAN) tashqi IP orqali ochilmasligi mumkin (router "hairpin" qilmaydi) — ichkarida
+  sinash uchun: `curl --resolve crm.devflix.uz:443:192.168.0.101 https://crm.devflix.uz/api/health/ready`.
 
-3. Faylni yoqish va sintaksisni tekshirish:
-
-```bash
-sudo ln -s /etc/nginx/sites-available/crm.devflix.uz /etc/nginx/sites-enabled/
-```
-
-```bash
-sudo nginx -t
-```
-
-4. **Faqat** `nginx -t` muvaffaqiyatli bo'lsa, `reload` qiling. `restart` emas:
-
-```bash
-sudo systemctl reload nginx
-```
-
-```bash
-sudo certbot --nginx -d crm.devflix.uz
-```
-
-certbot HTTPS blokini qo'shgach, o'sha `listen 443 ssl` blokiga bitta qator qo'shing (brauzer CRM'ni
-faqat HTTPS orqali ochadi; boshqa sarlavhalar — CSP, X-Frame-Options — CRM'ning o'zida bor):
-
-```nginx
-    add_header Strict-Transport-Security "max-age=31536000" always;
-```
-
-so'ng `sudo nginx -t && sudo systemctl reload nginx`.
+`nginx -t` dagi `protocol options redefined` ogohlantirishlari boshqa saytlarniki, CRM'ga aloqasi yo'q.
 
 ### Admin kirishi (2FA)
 
