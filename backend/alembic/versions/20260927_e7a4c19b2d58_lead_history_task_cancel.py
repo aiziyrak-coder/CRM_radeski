@@ -1,7 +1,7 @@
 """lead stage history, task cancel reason, patient tags index
 
 Revision ID: e7a4c19b2d58
-Revises: 5b8e1d2c4f60
+Revises: c4d2a8e6f1b3
 Create Date: 2026-09-27 12:00:00.000000
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 
 
 revision: str = "e7a4c19b2d58"
-down_revision: str | None = "5b8e1d2c4f60"
+down_revision: str | None = "c4d2a8e6f1b3"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

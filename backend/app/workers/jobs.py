@@ -66,7 +66,8 @@ def sync_catalog() -> dict[str, int]:
         run = await run_and_record(session, trigger="auto")  # outcome shown in settings
         if run.status is not SyncStatus.OK:  # empty/partial list or no site: keep ours
             log.warning("catalog sync %s, nothing changed: %s", run.status, run.counts or run.error)
-            heartbeat.record("catalog_sync", ok=False, error=run.status.value)
+            error = "sync_aborted" if run.status is SyncStatus.ABORTED else (run.error or "failed")
+            heartbeat.record("catalog_sync", ok=False, error=error)
             return {run.status.value: 1}
         heartbeat.record("catalog_sync", ok=True, detail=dict(run.counts or {}))
         return dict(run.counts or {})

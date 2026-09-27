@@ -41,7 +41,9 @@ async def test_audit_filters_and_facets(client: AsyncClient) -> None:
     async def ids(query: str) -> list[str]:
         resp = await client.get(f"/api/audit?{query}", headers=h)
         assert resp.status_code == 200, resp.text
-        return [i["action"] for i in resp.json()["items"] if i["action"] != "auth.login"]
+        # the admin's own login (and 2FA enrolment) happen "today" too
+        skip = {"auth.login", "auth.totp_enrolled"}
+        return [i["action"] for i in resp.json()["items"] if i["action"] not in skip]
 
     assert await ids("group=patient") == ["patient.view", "patient.update"]
     assert await ids("action=patient.update") == ["patient.update"]
