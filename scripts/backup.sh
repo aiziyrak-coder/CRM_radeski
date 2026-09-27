@@ -2,12 +2,14 @@
 # Daily PostgreSQL backup for Radeski CRM. Run from cron (see docs/04_DEPLOY.md).
 # Keeps 30 days of compressed dumps in $BACKUP_DIR.
 set -euo pipefail
+umask 077  # dumps and recordings hold patient data: owner-only files
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BACKUP_DIR="${BACKUP_DIR:-$PROJECT_DIR/backups}"
 KEEP_DAYS="${KEEP_DAYS:-30}"
 
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 cd "$PROJECT_DIR"
 
 file="$BACKUP_DIR/crm-$(date +%F_%H%M).sql.gz"
