@@ -8,7 +8,9 @@ catalog_sync_max_shrink) aborts the whole sync instead of deactivating half the 
 """
 
 import re
+import uuid
 from collections import Counter
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -16,7 +18,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.modules.catalog.models import Branch, Doctor, Service, ServiceCategory
+from app.modules.catalog.models import (
+    Branch,
+    CatalogSyncRun,
+    Doctor,
+    Service,
+    ServiceCategory,
+    SyncStatus,
+)
 from app.modules.diagnoses.categories import Specialty
 
 # site service category -> specialty and default device (TZ 4.2)
@@ -226,3 +235,34 @@ async def sync_from_site(session: AsyncSession) -> Counter[str]:
     return await apply_site_data(
         session, data["branches"], data["doctors"], data["services"], data["prices"]
     )
+
+
+async def run_and_record(
+    session: AsyncSession, *, trigger: str, user_id: uuid.UUID | None = None
+) -> CatalogSyncRun:
+    """Runs the sync and stores its outcome (the settings page shows the last one).
+
+    An aborted or failed sync is rolled back; only its run row is kept. The caller commits."""
+    started = datetime.now(UTC)
+    status, counts, error = SyncStatus.OK, None, None
+    try:
+        counts = dict(await sync_from_site(session))
+    except SyncAbortedError as exc:
+        await session.rollback()
+        status = SyncStatus.ABORTED
+        counts = {"entity": exc.entity, "fetched": exc.fetched, "active": exc.active}
+    except (httpx.HTTPError, ValueError, KeyError) as exc:  # site unreachable / bad response
+        await session.rollback()
+        status, error = SyncStatus.FAILED, f"{type(exc).__name__}: {exc}"[:500]
+    run = CatalogSyncRun(
+        started_at=started,
+        finished_at=datetime.now(UTC),
+        trigger=trigger,
+        user_id=user_id,
+        status=status,
+        counts=counts,
+        error=error,
+    )
+    session.add(run)
+    await session.flush()
+    return run

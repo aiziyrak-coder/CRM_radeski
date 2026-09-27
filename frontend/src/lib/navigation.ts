@@ -12,7 +12,8 @@ const ALL: readonly Role[] = ['operator', 'supervisor', 'registrar', 'doctor', '
 
 // Single source of truth for the menu and route guards (backend enforces the same roles on its API).
 export const NAV_ITEMS: readonly NavItem[] = [
-  { path: '/', labelKey: 'nav.home', roles: ALL },
+  // the registrar starts on the schedule's "today" screen instead (see landingFor)
+  { path: '/', labelKey: 'nav.home', roles: ALL.filter((r) => r !== 'registrar') },
   { path: '/tasks', labelKey: 'nav.tasks', roles: ['operator', 'supervisor', 'admin'] },
   { path: '/inbox', labelKey: 'nav.inbox', roles: ['operator', 'supervisor', 'registrar', 'admin'] },
   { path: '/calls', labelKey: 'nav.calls', roles: ['operator', 'supervisor', 'owner', 'admin'] },
@@ -40,6 +41,11 @@ export const NAV_ITEMS: readonly NavItem[] = [
 ]
 
 export const ROLES: readonly Role[] = ALL
+
+/** Where a role lands after login (and when a page isn't open to it). TZ 4.3 "Registrator ekrani". */
+export function landingFor(role: Role): string {
+  return role === 'registrar' ? '/schedule' : '/'
+}
 
 export function navFor(role: Role): NavItem[] {
   return NAV_ITEMS.filter((item) => item.roles.includes(role))

@@ -58,20 +58,20 @@ def campaigns() -> int:
 
 @celery_app.task(name="jobs.sync_catalog")
 def sync_catalog() -> dict[str, int]:
-    from app.modules.catalog.sync import SyncAbortedError, sync_from_site
+    from app.modules.catalog.models import SyncStatus
+    from app.modules.catalog.sync import run_and_record
     from app.modules.integrations_status import heartbeat
 
-    try:
-        counts = dict(_run(sync_from_site))
-    except SyncAbortedError as exc:  # the site answered with an empty/partial list: keep ours
-        log.warning("catalog sync aborted, nothing changed: %s", exc)
-        heartbeat.record("catalog_sync", ok=False, error="sync_aborted")
-        return {"aborted": 1}
-    except Exception as exc:
-        heartbeat.record("catalog_sync", ok=False, error=type(exc).__name__)
-        raise
-    heartbeat.record("catalog_sync", ok=True, detail=counts)
-    return counts
+    async def sync(session: AsyncSession) -> dict[str, int]:
+        run = await run_and_record(session, trigger="auto")  # outcome shown in settings
+        if run.status is not SyncStatus.OK:  # empty/partial list or no site: keep ours
+            log.warning("catalog sync %s, nothing changed: %s", run.status, run.counts or run.error)
+            heartbeat.record("catalog_sync", ok=False, error=run.status.value)
+            return {run.status.value: 1}
+        heartbeat.record("catalog_sync", ok=True, detail=dict(run.counts or {}))
+        return dict(run.counts or {})
+
+    return dict(_run(sync))
 
 
 @celery_app.task(name="jobs.sync_diagnoses")

@@ -235,6 +235,29 @@ async def _on_recommendation(session: AsyncSession, p: dict[str, Any]) -> None:
     )  # fmt: skip
 
 
+@on("recommendation.changed")
+async def _on_recommendation_changed(session: AsyncSession, p: dict[str, Any]) -> None:
+    """The doctor edited or withdrew a recommendation: its pending call follows."""
+    rec: Recommendation = p["recommendation"]
+    pending = (Task.recommendation_id == rec.id, Task.status == TaskStatus.OPEN)
+    if rec.status is RecommendationStatus.DISMISSED:
+        await session.execute(
+            update(Task)
+            .where(*pending)
+            .values(status=TaskStatus.CANCELLED, completed_at=clinic_time.now())
+            .execution_options(synchronize_session=False)
+        )
+        return
+    lead_days = get_settings().repeat_visit_lead_days
+    due = max(clinic_time.at(rec.due_date - timedelta(days=lead_days), time(9)), clinic_time.now())
+    await session.execute(
+        update(Task)
+        .where(*pending, Task.attempts == 0)  # a call already in progress keeps its retry time
+        .values(due_at=due, note=rec.note)
+        .execution_options(synchronize_session=False)
+    )
+
+
 @on("lead.created")
 async def _on_lead(session: AsyncSession, p: dict[str, Any]) -> None:
     lead: Lead = p["lead"]

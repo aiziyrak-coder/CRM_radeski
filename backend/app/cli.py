@@ -172,15 +172,15 @@ async def _telegram_setup() -> None:
 
 
 async def _sync_catalog() -> None:
-    from app.modules.catalog.sync import SyncAbortedError, sync_from_site
+    from app.modules.catalog.models import SyncStatus
+    from app.modules.catalog.sync import run_and_record
 
     async with SessionLocal() as session:
-        try:
-            counts = await sync_from_site(session)
-        except SyncAbortedError as exc:
-            sys.exit(f"Sinxronlash to'xtatildi, hech narsa o'zgarmadi: {exc}")
+        run = await run_and_record(session, trigger="manual")  # shown on the settings page
         await session.commit()
-    for key, value in sorted(counts.items()):
+    if run.status is not SyncStatus.OK:
+        sys.exit(f"Sinxronlash to'xtatildi, hech narsa o'zgarmadi: {run.counts or run.error}")
+    for key, value in sorted((run.counts or {}).items()):
         print(f"  {key:30} {value}")
 
 

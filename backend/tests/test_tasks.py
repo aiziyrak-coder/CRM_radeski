@@ -146,7 +146,9 @@ async def test_no_show_creates_call_task(client: AsyncClient, clinic: dict, op: 
         )
     ).json()
     await client.post(
-        f"/api/appointments/{appt['id']}/status", json={"status": "no_show"}, headers=op
+        f"/api/appointments/{appt['id']}/status",
+        json={"status": "no_show", "reason": "no_answer"},
+        headers=op,
     )
     [task] = await open_tasks(TaskType.NO_SHOW)
     assert str(task.appointment_id) == appt["id"] and task.script_code == "no_show"

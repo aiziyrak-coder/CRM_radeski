@@ -1,10 +1,10 @@
 import uuid
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Any
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.core.deps import SessionDep, client_ip, require_roles
@@ -12,11 +12,14 @@ from app.modules.audit import service as audit
 from app.modules.catalog import sync as site_sync
 from app.modules.catalog.models import (
     Branch,
+    CatalogSyncRun,
     Doctor,
+    DoctorService,
     Resource,
     ResourceKind,
     Service,
     ServiceCategory,
+    SyncStatus,
 )
 from app.modules.diagnoses.categories import Specialty
 from app.modules.users.models import Role, User
@@ -30,6 +33,7 @@ router = APIRouter(prefix="/catalog", tags=["catalog"])
 ALL_STAFF = (Role.OPERATOR, Role.SUPERVISOR, Role.REGISTRAR, Role.DOCTOR, Role.OWNER, Role.ADMIN)
 Reader = Annotated[User, Depends(require_roles(*ALL_STAFF))]
 Admin = Annotated[User, Depends(require_roles(Role.ADMIN))]
+DEVICE_TYPE = r"^[a-z0-9_]{2,50}$"
 
 
 class BranchOut(BaseModel):
@@ -67,7 +71,7 @@ class ResourceIn(BaseModel):
     branch_id: uuid.UUID
     name: str = Field(min_length=1, max_length=100)
     kind: ResourceKind
-    device_type: str | None = Field(default=None, pattern=r"^[a-z0-9_]{2,50}$")
+    device_type: str | None = Field(default=None, pattern=DEVICE_TYPE)
     is_active: bool = True
 
 
@@ -93,6 +97,7 @@ class ServiceOut(BaseModel):
     price: int | None
     is_active: bool
     duration_min: int
+    duration_confirmed: bool
     device_type: str | None
     requires_consultation: bool
     is_consultation: bool
@@ -105,7 +110,7 @@ class ServiceOut(BaseModel):
 
 class ServiceUpdate(BaseModel):
     duration_min: int | None = Field(default=None, ge=5, le=600)
-    device_type: str | None = Field(default=None, pattern=r"^[a-z0-9_]{2,50}$")
+    device_type: str | None = Field(default=None, pattern=DEVICE_TYPE)
     requires_consultation: bool | None = None
     is_consultation: bool | None = None
     course_sessions: int | None = Field(default=None, ge=1, le=50)
@@ -118,6 +123,44 @@ class ServiceUpdate(BaseModel):
 class ServicePage(BaseModel):
     total: int
     items: list[ServiceOut]
+
+
+class ServiceBulkIn(BaseModel):
+    service_ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+    duration_min: int | None = Field(default=None, ge=5, le=600)
+    device_type: str | None = Field(default=None, pattern=DEVICE_TYPE)
+    clear_device: bool = False  # device_type=None can't say "remove the device" on its own
+
+
+class DeviceTypeOut(BaseModel):
+    device_type: str
+    resources: int  # active devices of this type (any branch)
+    services: int  # active services that need it
+
+
+class DoctorServicesIn(BaseModel):
+    service_ids: list[uuid.UUID] = Field(max_length=2000)
+
+
+class DoctorServiceLink(BaseModel):
+    doctor_id: uuid.UUID
+    service_id: uuid.UUID
+
+
+class SyncRunOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    started_at: datetime
+    finished_at: datetime
+    trigger: str
+    user_id: uuid.UUID | None
+    status: SyncStatus
+    counts: dict[str, Any] | None
+    error: str | None
+
+
+class SyncStateOut(BaseModel):
+    last: SyncRunOut | None
+    last_ok: SyncRunOut | None
 
 
 @router.get("/branches")
@@ -189,6 +232,8 @@ async def create_resource(
 ) -> ResourceOut:
     if body.kind is ResourceKind.DEVICE and not body.device_type:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="device_type_required")
+    if body.kind is ResourceKind.ROOM:
+        body.device_type = None  # a room serves any service
     resource = Resource(**body.model_dump())
     session.add(resource)
     await session.flush()
@@ -207,6 +252,10 @@ async def update_resource(
     resource = await session.get(Resource, resource_id)
     if resource is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="resource_not_found")
+    if body.kind is ResourceKind.DEVICE and not body.device_type:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="device_type_required")
+    if body.kind is ResourceKind.ROOM:
+        body.device_type = None  # a room serves any service
     for field, value in body.model_dump().items():
         setattr(resource, field, value)
     audit.record(
@@ -230,7 +279,10 @@ async def services(
     q: Annotated[str | None, Query(max_length=100)] = None,
     category_id: uuid.UUID | None = None,
     active_only: bool = True,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    # "davomiylik to'ldirilmagan": still the sync's placeholder duration
+    duration_missing: bool = False,
+    device_type: Annotated[str | None, Query(max_length=50)] = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ServicePage:
     filters = []
@@ -238,6 +290,10 @@ async def services(
         filters.append(Service.is_active.is_(True))
     if category_id:
         filters.append(Service.category_id == category_id)
+    if duration_missing:
+        filters.append(Service.duration_confirmed.is_(False))
+    if device_type:
+        filters.append(Service.device_type == device_type)
     if q and q.strip():
         like = f"%{q.strip()}%"
         filters.append(or_(Service.name_uz.ilike(like), Service.name_ru.ilike(like)))
@@ -266,6 +322,8 @@ async def update_service(
     }
     for field, value in changes.items():
         setattr(service, field, value)
+    if "duration_min" in changes:
+        service.duration_confirmed = True
     audit.record(
         session, "catalog.service", user_id=user.id, entity="service", entity_id=service.id,
         after=changes, ip=client_ip(request),
@@ -274,24 +332,142 @@ async def update_service(
     return ServiceOut.model_validate(service)
 
 
+@router.post("/services/bulk")
+async def bulk_update_services(
+    body: ServiceBulkIn, request: Request, session: SessionDep, user: Admin
+) -> dict[str, int]:
+    """One duration / device for many services at once (e.g. a whole laser category)."""
+    values: dict[str, Any] = {}
+    if body.duration_min is not None:
+        values |= {"duration_min": body.duration_min, "duration_confirmed": True}
+    if body.clear_device:
+        values["device_type"] = None
+    elif body.device_type is not None:
+        values["device_type"] = body.device_type
+    if not values:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="nothing_to_change")
+    ids = set(body.service_ids)
+    found = set(await session.scalars(select(Service.id).where(Service.id.in_(ids))))
+    if found != ids:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="service_not_found")
+    await session.execute(update(Service).where(Service.id.in_(ids)).values(**values))
+    audit.record(
+        session, "catalog.service_bulk", user_id=user.id, entity="service",
+        after={**values, "service_ids": sorted(str(i) for i in ids)}, ip=client_ip(request),
+    )  # fmt: skip
+    await session.commit()
+    return {"updated": len(ids)}
+
+
+@router.get("/device-types")
+async def device_types(session: SessionDep, _: Reader) -> list[DeviceTypeOut]:
+    """Device types known to the clinic: from its devices and from services that need one."""
+    resources = dict(
+        (
+            await session.execute(
+                select(Resource.device_type, func.count())
+                .where(Resource.device_type.is_not(None), Resource.is_active.is_(True))
+                .group_by(Resource.device_type)
+            )
+        ).all()
+    )
+    services = dict(
+        (
+            await session.execute(
+                select(Service.device_type, func.count())
+                .where(Service.device_type.is_not(None), Service.is_active.is_(True))
+                .group_by(Service.device_type)
+            )
+        ).all()
+    )
+    # the type of a switched-off device is still known (with 0 active devices)
+    known = set(
+        await session.scalars(select(Resource.device_type).where(Resource.device_type.is_not(None)))
+    )
+    return [
+        DeviceTypeOut(device_type=t, resources=resources.get(t, 0), services=services.get(t, 0))
+        for t in sorted(known | set(services))
+    ]
+
+
+# --- doctor <-> service links (TZ 4.2) ---------------------------------------------------------
+
+
+@router.get("/doctor-services")
+async def doctor_services(
+    session: SessionDep, _: Reader, doctor_id: uuid.UUID | None = None
+) -> list[DoctorServiceLink]:
+    """Explicit links. A service with no links at all is matched to doctors by specialty."""
+    stmt = select(DoctorService.doctor_id, DoctorService.service_id)
+    if doctor_id:
+        stmt = stmt.where(DoctorService.doctor_id == doctor_id)
+    rows = await session.execute(stmt)
+    return [DoctorServiceLink(doctor_id=d, service_id=s) for d, s in rows]
+
+
+@router.put("/doctors/{doctor_id}/services")
+async def set_doctor_services(
+    doctor_id: uuid.UUID,
+    body: DoctorServicesIn,
+    request: Request,
+    session: SessionDep,
+    user: Admin,
+) -> list[DoctorServiceLink]:
+    """Replaces the doctor's explicit service list."""
+    if await session.get(Doctor, doctor_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="doctor_not_found")
+    ids = set(body.service_ids)
+    if ids:
+        found = set(await session.scalars(select(Service.id).where(Service.id.in_(ids))))
+        if found != ids:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="service_not_found")
+    before = sorted(
+        str(i)
+        for i in await session.scalars(
+            select(DoctorService.service_id).where(DoctorService.doctor_id == doctor_id)
+        )
+    )
+    await session.execute(delete(DoctorService).where(DoctorService.doctor_id == doctor_id))
+    session.add_all(DoctorService(doctor_id=doctor_id, service_id=i) for i in ids)
+    audit.record(
+        session, "catalog.doctor_services", user_id=user.id, entity="doctor",
+        entity_id=doctor_id, before={"service_ids": before},
+        after={"service_ids": sorted(str(i) for i in ids)}, ip=client_ip(request),
+    )  # fmt: skip
+    await session.commit()
+    return [DoctorServiceLink(doctor_id=doctor_id, service_id=i) for i in sorted(ids)]
+
+
+# --- site sync ---------------------------------------------------------------------------------
+
+
+@router.get("/sync")
+async def sync_state(session: SessionDep, _: Reader) -> SyncStateOut:
+    """The last catalog sync and the last successful one (settings page)."""
+    newest = select(CatalogSyncRun).order_by(CatalogSyncRun.started_at.desc()).limit(1)
+    last = await session.scalar(newest)
+    last_ok = await session.scalar(newest.where(CatalogSyncRun.status == SyncStatus.OK))
+    return SyncStateOut(
+        last=SyncRunOut.model_validate(last) if last else None,
+        last_ok=SyncRunOut.model_validate(last_ok) if last_ok else None,
+    )
+
+
 @router.post("/sync")
 async def sync_catalog(request: Request, session: SessionDep, user: Admin) -> dict[str, int]:
     user_id = user.id  # read before a rollback expires the instance
-    try:
-        counts = await site_sync.sync_from_site(session)
-    except site_sync.SyncAbortedError as exc:
-        await session.rollback()
+    run = await site_sync.run_and_record(session, trigger="manual", user_id=user_id)
+    if run.status is SyncStatus.ABORTED:
         audit.record(
-            session, "catalog.sync_aborted", user_id=user_id,
-            after={"entity": exc.entity, "fetched": exc.fetched, "active": exc.active},
+            session, "catalog.sync_aborted", user_id=user_id, after=run.counts,
             ip=client_ip(request),
         )  # fmt: skip
         await session.commit()
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="sync_aborted") from None
-    except (httpx.HTTPError, ValueError, KeyError) as exc:  # site unreachable / bad response
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail="site_unavailable") from exc
-    audit.record(
-        session, "catalog.sync", user_id=user.id, after=dict(counts), ip=client_ip(request)
-    )
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="sync_aborted")
+    if run.status is SyncStatus.FAILED:
+        await session.commit()
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail="site_unavailable")
+    counts = dict(run.counts or {})
+    audit.record(session, "catalog.sync", user_id=user_id, after=counts, ip=client_ip(request))
     await session.commit()
-    return dict(counts)
+    return counts

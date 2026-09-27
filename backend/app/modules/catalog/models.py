@@ -6,9 +6,20 @@ truth); CRM-only fields (duration, device, intervals, schedules) are edited here
 
 import enum
 import uuid
+from datetime import datetime
+from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint, false
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    false,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, Timestamps, UUIDPk, str_enum
@@ -89,6 +100,8 @@ class Service(UUIDPk, Timestamps, Base):
 
     # --- CRM-only parameters (TZ 4.2) ---
     duration_min: Mapped[int] = mapped_column(Integer, default=30)
+    # False while duration_min is still the sync's placeholder (nobody has set the real one)
+    duration_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     device_type: Mapped[str | None] = mapped_column(String(50))
     requires_consultation: Mapped[bool] = mapped_column(Boolean, default=False)
     is_consultation: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -109,3 +122,23 @@ class DoctorService(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     doctor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("doctors.id", ondelete="CASCADE"))
     service_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("services.id", ondelete="CASCADE"))
+
+
+class SyncStatus(enum.StrEnum):
+    OK = "ok"
+    ABORTED = "aborted"  # the site's snapshot looked broken; nothing was changed
+    FAILED = "failed"  # the site was unreachable or answered with garbage
+
+
+class CatalogSyncRun(UUIDPk, Base):
+    """One row per radeski.uz catalog sync (daily job or the admin's button)."""
+
+    __tablename__ = "catalog_sync_runs"
+
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    trigger: Mapped[str] = mapped_column(String(10))  # "manual" | "auto"
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    status: Mapped[SyncStatus] = mapped_column(str_enum(SyncStatus, 10))
+    counts: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(String(500))
