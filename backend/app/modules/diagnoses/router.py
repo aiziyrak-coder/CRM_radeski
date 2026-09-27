@@ -31,6 +31,9 @@ class CategoryOut(BaseModel):
     specialty: Specialty
     patients: int
     suggested_texts: int
+    suggested_rule: int = 0
+    suggested_ai: int = 0
+    approved_texts: int = 0
 
 
 class MappingOut(BaseModel):
@@ -54,6 +57,12 @@ class SetCategoryIn(BaseModel):
 
 class ApproveIn(BaseModel):
     ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+
+
+class ApproveCategoryIn(BaseModel):
+    category_code: str = Field(max_length=50)
+    # "rule" (default): only the keyword/ICD matches; null: rule and AI suggestions alike
+    method: MappingMethod | None = MappingMethod.RULE
 
 
 @router.get("/categories")
@@ -180,6 +189,38 @@ async def approve(
     )
     await session.commit()
     return {"approved": approved}
+
+
+@router.post("/mappings/approve-category")
+async def approve_category(
+    body: ApproveCategoryIn, request: Request, session: SessionDep, user: Approver
+) -> dict[str, int]:
+    """Bulk review: the doctor approves every suggestion of one category after looking at the
+    list (the approval is still theirs, recorded with their name)."""
+    if body.method is MappingMethod.MANUAL:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="validation_error")
+    try:
+        approved = await service.approve_category(session, body.category_code, user.id, body.method)
+    except service.UnknownCategoryError:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="unknown_category"
+        ) from None
+    audit.record(
+        session,
+        "diagnosis.approve_category",
+        user_id=user.id,
+        entity="diagnosis_category",
+        entity_id=body.category_code,
+        after={"method": body.method.value if body.method else None, "approved": approved},
+        ip=client_ip(request),
+    )
+    await session.commit()
+    return {"approved": approved}
+
+
+@router.get("/progress")
+async def progress(session: SessionDep, _: Reader) -> dict[str, int]:
+    return await service.progress(session)
 
 
 def _enqueue_ai() -> None:

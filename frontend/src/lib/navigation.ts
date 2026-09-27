@@ -34,6 +34,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { path: '/reports', labelKey: 'nav.reports', roles: ['operator', 'supervisor', 'owner', 'admin'] },
   { path: '/users', labelKey: 'nav.users', roles: ['admin'] },
   { path: '/audit', labelKey: 'nav.audit', roles: ['admin', 'owner'] },
+  { path: '/integrations', labelKey: 'nav.integrations', roles: ['admin'] },
   { path: '/settings', labelKey: 'nav.settings', roles: ['supervisor', 'admin'] },
   { path: '/profile', labelKey: 'nav.profile', roles: ALL },
 ]

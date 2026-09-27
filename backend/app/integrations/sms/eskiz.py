@@ -29,6 +29,29 @@ class EskizSms:
             f"{BASE}/message/sms/send", data=data, headers={"Authorization": f"Bearer {token}"}
         )
 
+    async def balance(self) -> float:
+        """The account's SMS balance (read-only; admin "test" button)."""
+        try:
+            async with httpx.AsyncClient(timeout=20, transport=self.transport) as client:
+                token = _token or await self._login(client)
+                resp = await client.get(
+                    f"{BASE}/user/get-limit", headers={"Authorization": f"Bearer {token}"}
+                )
+                if resp.status_code == 401:  # token expired
+                    token = await self._login(client)
+                    resp = await client.get(
+                        f"{BASE}/user/get-limit", headers={"Authorization": f"Bearer {token}"}
+                    )
+        except httpx.HTTPError as exc:
+            raise SendError(f"eskiz: {type(exc).__name__}") from exc
+        if resp.status_code != 200:
+            raise SendError(f"eskiz: {resp.status_code}")
+        data = resp.json()
+        value = (data.get("data") or {}).get("balance", data.get("balance"))
+        if value is None:
+            raise SendError("eskiz: no balance in the answer")
+        return float(value)
+
     async def send(self, phone: str, text: str, ref: str) -> str:
         s = get_settings()
         data = {"mobile_phone": phone.lstrip("+"), "message": text, "from": s.eskiz_from}

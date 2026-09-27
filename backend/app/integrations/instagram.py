@@ -40,6 +40,24 @@ class InstagramClient:
             raise SendError(f"instagram: {resp.status_code} {resp.text[:200]}")
         return str(resp.json().get("message_id", ""))
 
+    async def me(self) -> dict[str, str]:
+        """The account the token belongs to (read-only; admin "test" button)."""
+        s = get_settings()
+        try:
+            async with httpx.AsyncClient(timeout=20, transport=self.transport) as client:
+                resp = await client.get(
+                    f"https://graph.instagram.com/{s.instagram_graph_version}/me",
+                    params={"fields": "user_id,username"},
+                    headers={"Authorization": f"Bearer {s.instagram_access_token}"},
+                )
+        except httpx.HTTPError as exc:
+            raise SendError(f"instagram: {type(exc).__name__}") from None
+        if resp.status_code != 200:
+            raise SendError(f"instagram: {resp.status_code}")
+        data = resp.json()
+        return {"user_id": str(data.get("user_id") or data.get("id") or ""),
+                "username": str(data.get("username") or "")}  # fmt: skip
+
 
 def get_instagram() -> InstagramClient | None:
     s = get_settings()

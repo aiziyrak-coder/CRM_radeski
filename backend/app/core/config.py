@@ -98,6 +98,12 @@ class Settings(BaseSettings):
     reactivation_daily_limit: int = 20
     # reports: a missed call counts as called back by an outbound call within N days (TZ 4.11)
     missed_callback_window_days: int = 7
+    # campaigns (TZ 4.9): a booking counts for a campaign when made within N days of its call
+    campaign_attribution_days: int = 60
+    # "new solution" suggestion: diagnoses the Excimer laser treats (comma-separated codes)
+    campaign_excimer_categories: str = "vitiligo,psoriasis"
+    campaign_suggest_categories: int = 8  # how many diagnosis-category segments to suggest
+    campaign_summary_max_notes: int = 40  # operator notes / call summaries sent to the AI
     # a message a worker took but never finished (crash mid-send) is marked failed after this;
     # not resent automatically: the provider may already have delivered it
     messages_sending_timeout_minutes: int = 10

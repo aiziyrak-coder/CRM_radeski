@@ -4,7 +4,9 @@ sent once `AI_DAILY_BUDGET_USD` is used up (it resumes the next day)."""
 
 import logging
 from functools import lru_cache
+from typing import Any
 
+import httpx
 from openai import AsyncOpenAI
 from redis.asyncio import Redis
 
@@ -121,6 +123,27 @@ async def ensure_budget() -> None:
     budget = get_settings().ai_daily_budget_usd
     if budget > 0 and await spent_today() >= budget:
         raise AiBudgetExceededError(f"daily AI budget of ${budget:g} is used up")
+
+
+async def check_key(http_client: httpx.AsyncClient | None = None) -> dict[str, Any]:
+    """Proves the key works without spending anything: lists the models it can use and says
+    whether the configured ones are among them (admin "test" button)."""
+    s = get_settings()
+    if not s.openai_api_key:
+        raise AiDisabledError("OPENAI_API_KEY is empty")
+    api = AsyncOpenAI(api_key=s.openai_api_key, max_retries=0, timeout=20, http_client=http_client)
+    ids = [m.id async for m in api.models.list()]
+
+    def has(model: str) -> bool:
+        return any(i == model or i.startswith(f"{model}-") for i in ids)
+
+    return {
+        "models": len(ids),
+        "llm_model": s.ai_llm_model,
+        "llm_model_available": has(s.ai_llm_model),
+        "stt_model": s.ai_stt_model,
+        "stt_model_available": has(s.ai_stt_model),
+    }
 
 
 async def available() -> bool:

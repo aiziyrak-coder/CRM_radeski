@@ -1,6 +1,7 @@
 import hmac
 import json
 import logging
+import re
 import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
@@ -8,11 +9,12 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, exists, func, or_, select
 
 from app.core import clinic_time
 from app.core.config import get_settings
 from app.core.deps import SessionDep, require_roles
+from app.core.text import search_key
 from app.integrations import instagram, openai_client
 from app.integrations.llm import LlmError
 from app.integrations.sms import get_sms_sender
@@ -128,12 +130,39 @@ async def _conversation_out(session: SessionDep, rows: list[Conversation]) -> li
     ]
 
 
+def _matches(term: str) -> ColumnElement[bool]:
+    """Conversation search: the chat title (@username), a phone number or its part, the linked
+    patient's name in either script (search_key), or the text of any message."""
+    conds = [
+        Conversation.title.icontains(term, autoescape=True),
+        exists().where(
+            Message.conversation_id == Conversation.id,
+            Message.text.icontains(term, autoescape=True),
+        ),
+    ]
+    if len(digits := re.sub(r"\D", "", term)) >= 3:
+        conds.append(Conversation.phone.contains(digits, autoescape=True))
+        # an SMS chat is keyed by the E.164 number
+        conds.append(
+            (Conversation.channel == Channel.SMS)
+            & Conversation.external_id.contains(digits, autoescape=True)
+        )
+    if key := search_key(term):
+        conds.append(
+            Conversation.patient_id.in_(
+                select(Patient.id).where(Patient.search_key.contains(key, autoescape=True))
+            )
+        )
+    return or_(*conds)
+
+
 @router.get("/conversations")
 async def conversations(
     session: SessionDep,
     _: Agent,
     channel: Channel | None = None,
     unread: bool = False,
+    q: Annotated[str | None, Query(max_length=100)] = None,
     limit: int = Query(default=100, le=300),
 ) -> list[ConversationOut]:
     stmt = select(Conversation).order_by(Conversation.last_message_at.desc().nulls_last())
@@ -141,6 +170,8 @@ async def conversations(
         stmt = stmt.where(Conversation.channel == channel)
     if unread:
         stmt = stmt.where(Conversation.unread > 0)
+    if q and q.strip():
+        stmt = stmt.where(_matches(q.strip()))
     return await _conversation_out(session, list(await session.scalars(stmt.limit(limit))))
 
 

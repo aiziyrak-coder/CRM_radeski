@@ -47,10 +47,12 @@ export interface MessageTemplate {
 }
 
 export const getChannelsStatus = () => api<ChannelsStatus>('/messaging/status')
-export const getConversations = (filters: { channel?: string; unread?: boolean }) => {
+export const getConversations = (filters: { channel?: string; unread?: boolean; q?: string }) => {
   const q = new URLSearchParams()
   if (filters.channel) q.set('channel', filters.channel)
   if (filters.unread) q.set('unread', 'true')
+  // name (any script), @username, a part of the phone number or message text
+  if (filters.q?.trim()) q.set('q', filters.q.trim())
   return api<Conversation[]>(`/messaging/conversations?${q}`)
 }
 export const getUnread = () => api<{ conversations: number }>('/messaging/unread')

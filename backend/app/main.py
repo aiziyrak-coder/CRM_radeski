@@ -14,6 +14,7 @@ from app.modules.audit.router import router as audit_router
 from app.modules.campaigns.router import router as campaigns_router
 from app.modules.catalog.router import router as catalog_router
 from app.modules.diagnoses.router import router as diagnoses_router
+from app.modules.integrations_status.router import router as integrations_status_router
 from app.modules.leads.router import router as leads_router
 from app.modules.leads.router import webhook_router
 from app.modules.messaging.router import router as messaging_router
@@ -68,5 +69,6 @@ for router in (
     ai_router,
     messaging_router,
     messaging_webhooks,
+    integrations_status_router,
 ):
     app.include_router(router, prefix="/api")
