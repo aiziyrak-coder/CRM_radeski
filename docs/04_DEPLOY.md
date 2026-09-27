@@ -139,6 +139,15 @@ sudo systemctl reload nginx
 sudo certbot --nginx -d crm.radeski.uz
 ```
 
+certbot HTTPS blokini qo'shgach, o'sha `listen 443 ssl` blokiga bitta qator qo'shing (brauzer CRM'ni
+faqat HTTPS orqali ochadi; boshqa sarlavhalar — CSP, X-Frame-Options — CRM'ning o'zida bor):
+
+```nginx
+    add_header Strict-Transport-Security "max-age=31536000" always;
+```
+
+so'ng `sudo nginx -t && sudo systemctl reload nginx`.
+
 ### Admin kirishi (2FA)
 
 Admin va rahbar (owner) har kirishda telefon ilovasidagi 6 xonali kodni kiritadi. Birinchi kirishda

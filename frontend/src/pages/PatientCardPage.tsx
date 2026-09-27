@@ -369,6 +369,11 @@ function Phones({ patient }: { patient: Patient }) {
                   <Badge tone="good">{t('patients.primary')}</Badge>
                 </span>
               )}
+              {ph.wrong_number_at && (
+                <span className="ml-2" title={formatDateTime(ph.wrong_number_at)}>
+                  <Badge tone="bad">{t('patients.wrongNumber')}</Badge>
+                </span>
+              )}
             </div>
             <div className="flex gap-1">
               {!ph.is_primary && (
@@ -417,6 +422,7 @@ function Phones({ patient }: { patient: Patient }) {
 
 function DoNotCall({ patient }: { patient: Patient }) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const setPatient = useSetPatient(patient.id)
   const [reason, setReason] = useState('')
   const toggle = useMutation({
@@ -425,6 +431,7 @@ function DoNotCall({ patient }: { patient: Patient }) {
     onSuccess: (p) => {
       setPatient(p)
       setReason('')
+      void queryClient.invalidateQueries({ queryKey: ['tasks'] }) // outbound calls were cancelled
     },
   })
 
@@ -473,10 +480,10 @@ function Merge({ patient }: { patient: Patient }) {
     onSuccess: (p) => {
       setPatient(p)
       setQ('')
-      // the merged card's visits, calls and messages now belong to this one
+      // the merged card's visits, calls, tasks and messages now belong to this one
       // (the ['appointments'] prefix covers this patient's timeline too)
-      void queryClient.invalidateQueries({ queryKey: ['appointments', 'timeline', patient.id] })
       void queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      void queryClient.invalidateQueries({ queryKey: ['tasks'] })
     },
   })
   const candidates = data?.items.filter((p) => p.id !== patient.id) ?? []

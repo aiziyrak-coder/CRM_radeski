@@ -211,3 +211,14 @@ async def test_catalog_patch_ignores_nulls_and_links_a_user_once(client: AsyncCl
         f"/api/catalog/doctors/{second}", json={"user_id": str(uuid.uuid4())}, headers=admin
     )
     assert unknown.status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("raw", "price"),
+    [(150000, 150000), ("150000", 150000), ("150 000", 150000), ("150000.00", 150000),
+     (0, 0), ("0", 0), (None, None), ("kelishilgan", None), ("", None)],
+)  # fmt: skip
+def test_site_prices_are_read_tolerantly(raw: object, price: int | None) -> None:
+    from app.modules.catalog.sync import parse_price
+
+    assert parse_price(raw) == price

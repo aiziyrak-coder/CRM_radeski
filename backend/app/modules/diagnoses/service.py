@@ -3,9 +3,12 @@ from collections import Counter
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
+from redis.asyncio import Redis
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.modules.diagnoses.categories import CATEGORY_BY_CODE, normalize_text, suggest_category
 from app.modules.diagnoses.models import DiagnosisMapping, MappingMethod, MappingStatus
 from app.modules.patients.models import Patient, PatientCondition
@@ -43,15 +46,21 @@ async def sync(session: AsyncSession) -> Counter[str]:
         if not text:
             continue
         code = suggest_category(text)
-        session.add(
-            DiagnosisMapping(
+        # the nightly job and an import can run at the same time: a text added by the other
+        # one is skipped instead of failing (and rolling back) the whole run
+        inserted = await session.execute(
+            pg_insert(DiagnosisMapping)
+            .values(
+                id=uuid.uuid4(),
                 text=text,
                 category_code=code,
                 method=MappingMethod.RULE if code else None,
                 status=MappingStatus.SUGGESTED if code else MappingStatus.PENDING,
             )
+            .on_conflict_do_nothing(index_elements=[DiagnosisMapping.text])
         )
-        counts["mappings_suggested" if code else "mappings_pending"] += 1
+        if inserted.rowcount:
+            counts["mappings_suggested" if code else "mappings_pending"] += 1
     await session.flush()
     await apply(session)
     counts["conditions_categorized"] = (
@@ -178,14 +187,17 @@ def _ai_system() -> str:
 
 async def suggest_with_ai(session: AsyncSession, limit: int = 400) -> Counter[str]:
     """Pending mappings get an AI category proposal (status SUGGESTED, method AI); nothing is
-    applied to patients until a doctor approves it."""
+    applied to patients until a doctor approves it.
+
+    Runs as a background job (jobs.ai_diagnoses) and commits after every batch. A row is
+    re-read under a lock before it is written: a doctor who decided meanwhile keeps the decision."""
     from app.integrations.llm import LlmError, get_llm
     from app.modules.ai.prompts import mask_pii
 
     counts: Counter[str] = Counter()
     pending = list(
-        await session.scalars(
-            select(DiagnosisMapping)
+        await session.execute(
+            select(DiagnosisMapping.id, DiagnosisMapping.text)
             .where(DiagnosisMapping.status == MappingStatus.PENDING)
             .order_by(DiagnosisMapping.text)
             .limit(limit)
@@ -198,22 +210,58 @@ async def suggest_with_ai(session: AsyncSession, limit: int = 400) -> Counter[st
         try:
             out = await llm.parse(
                 system=system,
-                user="\n".join(f"{i}. {mask_pii(m.text)}" for i, m in enumerate(chunk, 1)),
+                user="\n".join(f"{i}. {mask_pii(text)}" for i, (_, text) in enumerate(chunk, 1)),
                 schema=_AiBatch,
                 cache_key="diagnosis-categories-v1",
             )
         except LlmError:
             counts["failed_batches"] += 1
             continue
-        for item in out.items:
-            if not 1 <= item.n <= len(chunk):
-                continue
-            mapping = chunk[item.n - 1]
-            if item.category in CATEGORY_BY_CODE and mapping.status is MappingStatus.PENDING:
-                mapping.category_code = item.category
-                mapping.method = MappingMethod.AI
-                mapping.status = MappingStatus.SUGGESTED
-                counts["suggested"] += 1
+        proposals = {
+            chunk[item.n - 1][0]: item.category
+            for item in out.items
+            if 1 <= item.n <= len(chunk) and item.category in CATEGORY_BY_CODE
+        }
+        still_pending = await session.scalars(
+            select(DiagnosisMapping)
+            .where(
+                DiagnosisMapping.id.in_(proposals),
+                DiagnosisMapping.status == MappingStatus.PENDING,
+            )
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
+        )
+        for mapping in still_pending:
+            mapping.category_code = proposals[mapping.id]
+            mapping.method = MappingMethod.AI
+            mapping.status = MappingStatus.SUGGESTED
+            counts["suggested"] += 1
         counts["checked"] += len(chunk)
-    await session.flush()
+        await session.commit()  # each batch is kept even if a later one fails
     return counts
+
+
+AI_LOCK = "lock:ai-diagnoses"
+AI_LOCK_SECONDS = 3600
+
+
+async def ai_running() -> bool:
+    redis = Redis.from_url(get_settings().redis_url)
+    try:
+        return bool(await redis.exists(AI_LOCK))
+    finally:
+        await redis.aclose()
+
+
+async def run_ai_suggestions(session: AsyncSession, limit: int = 400) -> Counter[str] | None:
+    """The background job: one run at a time (a second click doesn't pay for the same texts)."""
+    redis = Redis.from_url(get_settings().redis_url)
+    try:
+        if not await redis.set(AI_LOCK, 1, nx=True, ex=AI_LOCK_SECONDS):
+            return None
+        try:
+            return await suggest_with_ai(session, limit=limit)
+        finally:
+            await redis.delete(AI_LOCK)
+    finally:
+        await redis.aclose()

@@ -192,3 +192,27 @@ async def test_dry_run_writes_nothing(data_dir: Path) -> None:
 
     assert report.counts["main:created"] == 3
     assert await _count(Patient) == 0
+
+
+async def test_reimport_after_a_merge_brings_no_duplicate(data_dir: Path) -> None:
+    from app.modules.patients import service as patients
+
+    async with SessionLocal() as session:
+        await run_import(session, data_dir)
+    async with SessionLocal() as s:
+        # an operator folds the imported card into one made in the CRM
+        imported = await s.scalar(select(Patient).where(Patient.full_name == "Синов Бобур"))
+        crm_card = Patient(
+            full_name="Бобур Синов", search_key="bobur sinov", kind=PatientKind.ACTIVE
+        )
+        s.add(crm_card)
+        await s.commit()
+        target, source = await patients.lock_pair(s, crm_card.id, imported.id)
+        await patients.merge(s, target, source)
+        await s.commit()
+    before = await _count(Patient)
+
+    async with SessionLocal() as session:
+        report = await run_import(session, data_dir)
+    assert await _count(Patient) == before
+    assert report.counts["district:created"] == 0 and report.counts["main:created"] == 0

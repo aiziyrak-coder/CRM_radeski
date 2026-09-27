@@ -84,16 +84,32 @@ class _Importer:
         )
         for number, pid in rows:
             self.by_phone.setdefault(number, pid)
-        rows = await self.session.execute(
-            select(Patient.legacy_ref, Patient.id, Patient.search_key, Patient.birth_date).where(
-                Patient.merged_into_id.is_(None)
+        rows = (
+            await self.session.execute(
+                select(
+                    Patient.legacy_ref, Patient.id, Patient.search_key, Patient.birth_date,
+                    Patient.merged_into_id,
+                )
             )
-        )
-        for ref, pid, key, dob in rows:
+        ).all()  # fmt: skip
+        merged = {pid: into for _, pid, _, _, into in rows if into}
+
+        def live(pid: uuid.UUID) -> uuid.UUID:
+            """A card merged into another one is imported into that one (no duplicate comes back
+            when the import is run again)."""
+            seen = set()
+            while pid in merged and pid not in seen:
+                seen.add(pid)
+                pid = merged[pid]
+            return pid
+
+        for ref, pid, _, _, _ in rows:
             if ref:
-                self.by_ref[ref] = pid
+                self.by_ref[ref] = live(pid)
+        # live cards first; a merged card's name + birth date still lead to the card it went into
+        for _, pid, key, dob, _into in sorted(rows, key=lambda r: r[4] is not None):
             if key and dob:
-                self.by_identity.setdefault((key, dob), pid)
+                self.by_identity.setdefault((key, dob), live(pid))
         self.condition_refs = set(
             await self.session.scalars(
                 select(PatientCondition.source).where(PatientCondition.source.like("import:%"))
@@ -181,9 +197,14 @@ class _Importer:
 
     async def import_main(self, path: Path) -> None:
         for p in read_patient_list(path, "main"):
-            pid = await self.patient_row(p, f"main:{p.legacy_no}")
+            # the "No" column is the row's identity across re-runs; without it the row number
+            # stands in (reported: re-running with a different export can't match such rows)
+            no = p.legacy_no or f"row{p.row}"
+            if not p.legacy_no:
+                self.report.problem("main", p.row, "number_missing", p.full_name)
+            pid = await self.patient_row(p, f"main:{no}")
             if pid and p.diagnosis:
-                self._add_condition(pid, p.diagnosis, f"import:main:{p.legacy_no}", None)
+                self._add_condition(pid, p.diagnosis, f"import:main:{no}", None)
 
     async def import_district(self, path: Path) -> None:
         district = district_from_filename(path.name)
@@ -198,7 +219,10 @@ class _Importer:
                     patient.district = district  # the per-district list is authoritative
                     self.report.counts["district:confirmed"] += 1
                     continue
-            await self.patient_row(p, f"district:{district}:{p.legacy_no}")
+            no = p.legacy_no or f"row{p.row}"
+            if not p.legacy_no:
+                self.report.problem(district, p.row, "number_missing", p.full_name)
+            await self.patient_row(p, f"district:{district}:{no}")
 
     async def import_conditions(self, path: Path) -> None:
         for c in read_conditions(path):

@@ -87,7 +87,10 @@ function MappingRow({
   const queryClient = useQueryClient()
   const set = useMutation({
     mutationFn: (code: string) => setMappingCategory(m.id, code),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['diagnoses'] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['diagnoses'] })
+      void queryClient.invalidateQueries({ queryKey: ['patients'] }) // category badges and filter
+    },
   })
   const current = categories.find((c) => c.code === m.category_code)
 
@@ -152,10 +155,13 @@ export default function DiagnosesPage() {
     queryKey: ['diagnoses', 'categories'],
     queryFn: getCategories,
   })
+  // while the AI job runs in the background, the list refreshes itself for a while
+  const [aiStartedAt, setAiStartedAt] = useState<number | null>(null)
   const { data, error, isFetching } = useQuery({
     queryKey: ['diagnoses', 'mappings', status, category, debouncedQ, offset],
     queryFn: () => getMappings({ status, category, q: debouncedQ, offset, limit: PAGE }),
     placeholderData: keepPreviousData,
+    refetchInterval: () => (aiStartedAt && Date.now() - aiStartedAt < 10 * 60_000 ? 15_000 : false),
   })
 
   const invalidate = () => {
@@ -165,7 +171,10 @@ export default function DiagnosesPage() {
   }
   const approve = useMutation({ mutationFn: approveMappings, onSuccess: invalidate })
   const sync = useMutation({ mutationFn: syncDiagnoses, onSuccess: invalidate })
-  const aiSuggest = useMutation({ mutationFn: aiSuggestDiagnoses, onSuccess: invalidate })
+  const aiSuggest = useMutation({
+    mutationFn: aiSuggestDiagnoses,
+    onSuccess: () => setAiStartedAt(Date.now()),
+  })
   const { data: ai } = useQuery({ queryKey: ['ai', 'status'], queryFn: getAiStatus, staleTime: 600_000 })
 
   const suggestedOnPage = data?.items.filter((m) => m.status === 'suggested').map((m) => m.id) ?? []
@@ -242,20 +251,17 @@ export default function DiagnosesPage() {
               {t('diagnoses.sync')}
             </Button>
             {ai?.enabled && (data?.by_status.pending ?? 0) > 0 && (
-              <Button variant="secondary" disabled={aiSuggest.isPending} onClick={() => aiSuggest.mutate()}>
+              <Button
+                variant="secondary"
+                disabled={aiSuggest.isPending || aiSuggest.isSuccess}
+                onClick={() => aiSuggest.mutate()}
+              >
                 {aiSuggest.isPending ? t('app.loading') : t('diagnoses.aiSuggest')}
               </Button>
             )}
           </div>
         )}
-        {aiSuggest.data && (
-          <Notice>
-            {t('diagnoses.aiSuggested', {
-              count: aiSuggest.data.suggested ?? 0,
-              checked: aiSuggest.data.checked ?? 0,
-            })}
-          </Notice>
-        )}
+        {aiSuggest.isSuccess && <Notice>{t('diagnoses.aiStarted')}</Notice>}
         {approve.data && <Notice>{t('diagnoses.approved', { count: approve.data.approved })}</Notice>}
         <ErrorText error={error ?? approve.error ?? sync.error ?? aiSuggest.error} />
 

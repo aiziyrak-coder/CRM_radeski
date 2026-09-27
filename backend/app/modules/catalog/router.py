@@ -1,6 +1,7 @@
 import uuid
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
@@ -287,7 +288,7 @@ async def sync_catalog(request: Request, session: SessionDep, user: Admin) -> di
         )  # fmt: skip
         await session.commit()
         raise HTTPException(status.HTTP_409_CONFLICT, detail="sync_aborted") from None
-    except Exception as exc:  # noqa: BLE001 - site unreachable / bad response
+    except (httpx.HTTPError, ValueError, KeyError) as exc:  # site unreachable / bad response
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail="site_unavailable") from exc
     audit.record(
         session, "catalog.sync", user_id=user.id, after=dict(counts), ip=client_ip(request)

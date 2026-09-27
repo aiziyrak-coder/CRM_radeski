@@ -56,6 +56,7 @@ class PhoneOut(BaseModel):
     number: str
     is_primary: bool
     note: str | None
+    wrong_number_at: datetime | None = None
 
     @computed_field
     @property

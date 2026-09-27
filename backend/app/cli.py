@@ -64,13 +64,23 @@ async def _import_legacy(args: argparse.Namespace) -> None:
     from app.importer.legacy import run_import
 
     data_dir = Path(args.dir)
+    report_path = Path(args.report) if args.report else data_dir / "import-problems.csv"
+    # the problem list holds names and phones: check it can be written before importing, not
+    # after (the container runs as uid 10001; a host folder may not be writable for it)
+    try:
+        report_path.touch()
+    except OSError as exc:
+        sys.exit(
+            f"Hisobot faylini yozib bo'lmaydi: {report_path} ({exc}). "
+            f"Papkaga ruxsat bering (masalan: sudo chown 10001 {report_path.parent}) "
+            "yoki --report bilan boshqa joy ko'rsating."
+        )
     async with SessionLocal() as session:
         report = await run_import(session, data_dir, dry_run=args.dry_run)
 
     print("SINOV (bazaga yozilmadi)" if args.dry_run else "Import yakunlandi")
     for key, value in sorted(report.counts.items()):
         print(f"  {key:45} {value}")
-    report_path = Path(args.report) if args.report else data_dir / "import-problems.csv"
     try:
         report.write_csv(report_path)
         print(f"Muammoli qatorlar: {len(report.problems)} -> {report_path}")
@@ -189,6 +199,30 @@ async def _generate_prompts(args: argparse.Namespace) -> None:
     print("Tinglab ko'ring; yoqsa telephony/sounds/ ga (yoki pbx_sounds volume'iga) ko'chiring.")
 
 
+async def _wait_migrations(limit_seconds: int = 600) -> None:
+    """Workers and beat start after the api has brought the schema to this code's head."""
+    import time
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import text
+
+    head = ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
+    deadline = time.monotonic() + limit_seconds
+    current = None
+    while time.monotonic() < deadline:
+        try:
+            async with SessionLocal() as session:
+                current = await session.scalar(text("SELECT version_num FROM alembic_version"))
+        except Exception:  # database starting, table not created yet
+            current = None
+        if current == head:
+            print(f"migratsiyalar tayyor: {head}")
+            return
+        await asyncio.sleep(3)
+    sys.exit(f"migratsiyalar {limit_seconds} s ichida qo'llanmadi (bazada {current}, kod {head})")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -215,6 +249,7 @@ def main() -> None:
     prompts.add_argument("--out", default="/recordings/ivr-prompts", help="natija papkasi")
     prompts.add_argument("--voice", default="nova", help="OpenAI ovozi (nova, shimmer, coral...)")
     prompts.add_argument("--only", nargs="*", help="faqat shu fayllar (masalan: welcome goodbye)")
+    sub.add_parser("wait-migrations", help="baza sxemasi kod bilan mos kelguncha kutish")
     totp_reset = sub.add_parser("reset-totp", help="admin telefonini yo'qotsa: 2FA'ni qayta ulash")
     totp_reset.add_argument("--username", required=True)
     bench = sub.add_parser(
@@ -230,6 +265,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "create-user":
         asyncio.run(_create_user(args))
+    elif args.command == "wait-migrations":
+        asyncio.run(_wait_migrations())
     elif args.command == "generate-prompts":
         asyncio.run(_generate_prompts(args))
     elif args.command == "sync-catalog":

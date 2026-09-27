@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clinic_time
 from app.modules.campaigns.models import Campaign, CampaignStatus
-from app.modules.patients.models import Patient, PatientCondition
+from app.modules.patients.models import Patient, PatientCondition, PatientPhone
 from app.modules.scheduling.models import ACTIVE_STATUSES, Appointment
 from app.modules.tasks import service as tasks
 from app.modules.tasks.models import (
@@ -45,7 +45,12 @@ class CampaignError(Exception):
 def segment_query(segment: dict[str, Any]) -> Select:
     """Patient ids matching a segment; do-not-call and merged cards are always excluded."""
     stmt = select(Patient.id).where(
-        Patient.merged_into_id.is_(None), Patient.do_not_call.is_(False)
+        Patient.merged_into_id.is_(None),
+        Patient.do_not_call.is_(False),
+        # someone to call: a number that wasn't reported wrong (imports leave some without any)
+        exists().where(
+            PatientPhone.patient_id == Patient.id, PatientPhone.wrong_number_at.is_(None)
+        ),
     )
     if kinds := segment.get("kinds"):
         stmt = stmt.where(Patient.kind.in_(kinds))

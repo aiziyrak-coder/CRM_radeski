@@ -14,6 +14,7 @@ from app.core import clinic_time
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.text import search_key
+from app.modules.audit.models import AuditLog
 from app.modules.catalog.models import Doctor, Service
 from app.modules.leads.models import Lead
 from app.modules.patients.models import Patient, PatientKind, PatientPhone
@@ -477,6 +478,9 @@ async def test_reports(client: AsyncClient, clinic: dict, op: dict) -> None:
         "/api/reports/kpi.xlsx", params={"from": today, "to": today}, headers=owner
     )
     assert xlsx.status_code == 200 and xlsx.content[:2] == b"PK"
+    async with SessionLocal() as s:  # the export is audited
+        exported = await s.scalar(select(AuditLog).where(AuditLog.action == "report.export"))
+    assert exported.after == {"from": today, "to": today}
 
 
 def test_date_import_is_used() -> None:

@@ -277,11 +277,15 @@ function CampaignRow({ c }: { c: Campaign }) {
             variant="ghost"
             className="px-2 py-1 text-xs"
             disabled={change.isPending}
-            onClick={() => change.mutate('finished')}
+            onClick={() => {
+              // finishing is final: the campaign's open calls are cancelled
+              if (window.confirm(t('campaigns.finishConfirm'))) change.mutate('finished')
+            }}
           >
             {t('campaigns.finish')}
           </Button>
         )}
+        <ErrorText error={change.error} />
       </td>
     </tr>
   )

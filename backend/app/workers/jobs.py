@@ -151,6 +151,13 @@ def retry_analyses() -> int:
     return len(ids)
 
 
+@celery_app.task(name="jobs.ai_diagnoses")
+def ai_diagnoses() -> dict[str, int]:
+    from app.modules.diagnoses.service import run_ai_suggestions
+
+    return dict(_run(run_ai_suggestions) or {})
+
+
 @celery_app.task(name="jobs.weekly_digest")
 def weekly_digest() -> str:
     from app.modules.ai.qa import make_digest

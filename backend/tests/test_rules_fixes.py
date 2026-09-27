@@ -540,3 +540,35 @@ async def test_site_webhook_bad_body_and_duplicates(client: AsyncClient) -> None
             assert await s.scalar(select(func.count()).select_from(Lead)) == 1
     finally:
         settings.site_webhook_secret = ""
+
+
+async def test_campaigns_skip_patients_without_a_number_to_call(
+    client: AsyncClient, op: dict, sup: dict
+) -> None:
+    await _cold_patients(3)
+    async with SessionLocal() as s:  # imported without a usable phone
+        s.add(Patient(full_name="Raqamsiz", search_key="raqamsiz", kind=PatientKind.COLD, tags=[]))
+        await s.commit()
+    segment = {"kinds": ["cold"]}
+    preview = await client.post("/api/campaigns/preview", json=segment, headers=sup)
+    assert preview.json() == {"audience": 3}
+
+    # an operator reaches a stranger on one of them: "wrong number"
+    async with SessionLocal() as s:
+        patient = await s.scalar(select(Patient).where(Patient.full_name == "Kamp 0"))
+        await tasks.create_task(
+            s, TaskType.CAMPAIGN, due_at=clinic_time.now(), patient_id=patient.id,
+            dedupe_key="wrong-test",
+        )  # fmt: skip
+        await s.commit()
+    [task] = await tasks_of(TaskType.CAMPAIGN)
+    resp = await client.post(
+        f"/api/tasks/{task.id}/result", json={"outcome": "wrong_number"}, headers=op
+    )
+    assert resp.status_code == 200, resp.text
+    async with SessionLocal() as s:
+        phone = await s.scalar(select(PatientPhone).where(PatientPhone.patient_id == patient.id))
+    assert phone.wrong_number_at is not None
+    # no later campaign dials that number again
+    preview = await client.post("/api/campaigns/preview", json=segment, headers=sup)
+    assert preview.json() == {"audience": 2}

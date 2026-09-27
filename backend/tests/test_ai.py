@@ -429,7 +429,9 @@ async def test_brief_without_ai_lists_the_facts(
     assert brief["ai"] is False and "patient kind: legacy" in brief["text"]
 
 
-async def test_ai_suggests_diagnosis_categories(client: AsyncClient, fakes: FakeLlm) -> None:
+async def test_ai_suggests_diagnosis_categories(
+    client: AsyncClient, fakes: FakeLlm, monkeypatch: pytest.MonkeyPatch
+) -> None:
     async with SessionLocal() as s:
         for text in ("выпадение волос диффузное", "непонятная запись"):
             s.add(DiagnosisMapping(text=text, status=MappingStatus.PENDING))
@@ -439,15 +441,65 @@ async def test_ai_suggests_diagnosis_categories(client: AsyncClient, fakes: Fake
     fakes.answers[_AiBatch] = _AiBatch(
         items=[_AiItem(n=1, category="alopecia_diffuse"), _AiItem(n=2, category=None)]
     )
+    from app.modules.diagnoses import router as diagnoses_router
+    from app.modules.diagnoses import service as diagnoses
+
+    queued: list[bool] = []
+    monkeypatch.setattr(diagnoses_router, "_enqueue_ai", lambda: queued.append(True))
     await make_user("doc1", Role.DOCTOR)
     doc = bearer(await login(client, "doc1"))
     resp = await client.post("/api/diagnoses/ai-suggest", headers=doc)
-    assert resp.status_code == 200 and resp.json()["suggested"] == 1
+    assert resp.status_code == 202 and queued == [True]  # the job runs in the background
+
+    async with SessionLocal() as s:
+        counts = await diagnoses.run_ai_suggestions(s)
+    assert counts["suggested"] == 1
     async with SessionLocal() as s:
         rows = {m.text: m for m in await s.scalars(select(DiagnosisMapping))}
     assert rows["выпадение волос диффузное"].status == "suggested"
     assert rows["выпадение волос диффузное"].method == "ai"
     assert rows["непонятная запись"].status == "pending"
+
+
+async def test_ai_diagnosis_run_keeps_a_doctors_decision(
+    client: AsyncClient, fakes: FakeLlm, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.modules.diagnoses import router as diagnoses_router
+    from app.modules.diagnoses import service as diagnoses
+    from app.modules.diagnoses.service import _AiBatch, _AiItem
+
+    async with SessionLocal() as s:
+        s.add(DiagnosisMapping(text="выпадение волос", status=MappingStatus.PENDING))
+        await s.commit()
+    fakes.answers[_AiBatch] = _AiBatch(items=[_AiItem(n=1, category="alopecia_diffuse")])
+    original = fakes.parse
+
+    async def doctor_decides_meanwhile(**kwargs):
+        async with SessionLocal() as s:  # while the model thinks, the doctor approves a category
+            m = (await s.scalars(select(DiagnosisMapping))).one()
+            m.category_code, m.status = "alopecia_areata", MappingStatus.APPROVED
+            await s.commit()
+        return await original(**kwargs)
+
+    monkeypatch.setattr(fakes, "parse", doctor_decides_meanwhile)
+    async with SessionLocal() as s:
+        counts = await diagnoses.run_ai_suggestions(s)
+    assert counts["suggested"] == 0
+    async with SessionLocal() as s:
+        m = (await s.scalars(select(DiagnosisMapping))).one()
+    assert (m.status, m.category_code) == ("approved", "alopecia_areata")
+
+    # one run at a time: a second click while a run holds the lock is refused
+    monkeypatch.setattr(diagnoses_router, "_enqueue_ai", lambda: None)
+    monkeypatch.setattr(diagnoses, "ai_running", _true)
+    await make_user("doc1", Role.DOCTOR)
+    doc = bearer(await login(client, "doc1"))
+    resp = await client.post("/api/diagnoses/ai-suggest", headers=doc)
+    assert resp.status_code == 409 and resp.json()["detail"] == "already_running"
+
+
+async def _true() -> bool:
+    return True
 
 
 async def test_task_status_unaffected_by_ai(

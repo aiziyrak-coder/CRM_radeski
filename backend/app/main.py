@@ -41,8 +41,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title=settings.app_name,
-    docs_url="/api/docs",
-    openapi_url="/api/openapi.json",
+    # the API map is for development; in production it would only help an attacker
+    docs_url=None if settings.is_production else "/api/docs",
+    openapi_url=None if settings.is_production else "/api/openapi.json",
     lifespan=lifespan,
 )
 

@@ -53,7 +53,8 @@ services:
       DB_NULL_POOL: "true"
     volumes:
       - radeski_crm_recordings:/recordings
-    command: ["celery", "-A", "app.workers.celery_app", "worker", "-Q", "celery", "--loglevel=INFO", "--concurrency=2"]
+    # after a deploy the api applies migrations; jobs start once the schema is up to date
+    command: ["sh", "-c", "python -m app.cli wait-migrations && exec celery -A app.workers.celery_app worker -Q celery --loglevel=INFO --concurrency=2"]
 
   # AI analyses wait on OpenAI (the flex tier can take minutes), so they get their own worker:
   # messages, reminders and recordings never queue behind them
@@ -65,7 +66,7 @@ services:
       DB_NULL_POOL: "true"
     volumes:
       - radeski_crm_recordings:/recordings
-    command: ["celery", "-A", "app.workers.celery_app", "worker", "-Q", "ai", "-n", "ai@%h", "--loglevel=INFO", "--concurrency=2"]
+    command: ["sh", "-c", "python -m app.cli wait-migrations && exec celery -A app.workers.celery_app worker -Q ai -n ai@%h --loglevel=INFO --concurrency=2"]
 
   beat:
     <<: *backend
@@ -73,7 +74,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://crm:${DB_PASSWORD:?DB_PASSWORD kerak}@db:5432/crm
       REDIS_URL: redis://redis:6379/0
       DB_NULL_POOL: "true"
-    command: ["celery", "-A", "app.workers.celery_app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
+    command: ["sh", "-c", "python -m app.cli wait-migrations && exec celery -A app.workers.celery_app beat --loglevel=INFO --schedule=/tmp/celerybeat-schedule"]
 
   db:
     image: postgres:16
@@ -113,9 +114,27 @@ services:
     build: ./telephony
     profiles: ["telephony"]
     restart: unless-stopped
-    env_file: .env
+    # only its own settings: Asterisk faces the internet (SIP/RTP), so it never sees the
+    # database, JWT, OpenAI or messaging secrets from .env
     environment:
       PBX_CRM_URL: http://web
+      PBX_API_SECRET: ${PBX_API_SECRET:-}
+      PBX_SIP_SECRET: ${PBX_SIP_SECRET:-}
+      PBX_EXTENSIONS: ${PBX_EXTENSIONS:-}
+      PBX_LOCAL_NETS: ${PBX_LOCAL_NETS:-}
+      PBX_PUBLIC_IP: ${PBX_PUBLIC_IP:-}
+      PBX_OPEN_DAYS: ${PBX_OPEN_DAYS:-}
+      PBX_OPEN_HOURS: ${PBX_OPEN_HOURS:-}
+      PBX_QUEUE_WAIT: ${PBX_QUEUE_WAIT:-}
+      PBX_RTP_START: ${PBX_RTP_START:-}
+      PBX_RTP_END: ${PBX_RTP_END:-}
+      PBX_SIP_PORT: ${PBX_SIP_PORT:-}
+      SIP_HOST: ${SIP_HOST:-}
+      SIP_PORT: ${SIP_PORT:-}
+      SIP_USERNAME: ${SIP_USERNAME:-}
+      SIP_PASSWORD: ${SIP_PASSWORD:-}
+      SIP_NUMBER: ${SIP_NUMBER:-}
+      SIP_DIAL_PREFIX: ${SIP_DIAL_PREFIX:-}
     ports:
       - "${PBX_SIP_PORT:-5060}:${PBX_SIP_PORT:-5060}/udp"
       - "${PBX_RTP_START:-17000}-${PBX_RTP_END:-17039}:${PBX_RTP_START:-17000}-${PBX_RTP_END:-17039}/udp"

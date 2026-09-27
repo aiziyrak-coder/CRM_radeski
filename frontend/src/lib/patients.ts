@@ -31,7 +31,15 @@ export const SOURCES: Source[] = [
   'other',
 ]
 
-export type Phone = { id: string; number: string; display: string; is_primary: boolean; note: string | null }
+export type Phone = {
+  id: string
+  number: string
+  display: string
+  is_primary: boolean
+  note: string | null
+  /** an operator reached someone else on it: campaigns skip it */
+  wrong_number_at?: string | null
+}
 
 export type PatientListItem = {
   id: string

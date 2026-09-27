@@ -57,6 +57,20 @@ def _is_foreign_branch(item: dict[str, Any]) -> bool:
     return "Belgiya" in text or (item.get("phone") or "").startswith("+32")
 
 
+def parse_price(value: Any) -> int | None:
+    """Price from the site: 150000, "150000", "150 000", "150 000.00" -> 150000. 0 is a real price
+    (a free consultation); anything unreadable is None instead of stopping the whole sync."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return int(value)
+    digits = str(value).replace(chr(0xA0), "").replace(" ", "").replace(",", ".")
+    try:
+        return int(float(digits))
+    except ValueError:
+        return None
+
+
 class SyncAbortedError(Exception):
     """The site returned a list that looks broken; nothing was changed."""
 
@@ -184,8 +198,7 @@ async def apply_site_data(
             counts["services_created"] += 1
         s.name_uz = item["name_uz"]
         s.name_ru = item.get("name_ru") or item["name_uz"]
-        price = item.get("price_value")
-        s.price = int(price) if price else None
+        s.price = parse_price(item.get("price_value"))
         s.category_id = existing_c[cat_sid].id if cat_sid in existing_c else None
         s.is_active = True
     for sid, s in existing_s.items():

@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clinic_time
@@ -16,7 +16,7 @@ from app.core.events import on
 from app.modules.catalog.models import Service
 from app.modules.leads import service as leads
 from app.modules.leads.models import OPEN_STAGES, Lead, LeadChannel, LeadStage
-from app.modules.patients.models import Patient, PatientKind
+from app.modules.patients.models import Patient, PatientKind, PatientPhone
 from app.modules.scheduling.models import (
     ACTIVE_STATUSES,
     Appointment,
@@ -344,6 +344,18 @@ async def _on_call(session: AsyncSession, p: dict[str, Any]) -> None:
 async def _on_task_result(session: AsyncSession, p: dict[str, Any]) -> None:
     task: Task = p["task"]
     outcome: Outcome = p["outcome"]
+    if outcome is Outcome.WRONG_NUMBER and task.patient_id:
+        # the number that was dialled (the primary one) isn't this person's: no campaign calls it
+        # again. The card stays; another number can be added.
+        await session.execute(
+            update(PatientPhone)
+            .where(
+                PatientPhone.patient_id == task.patient_id,
+                PatientPhone.is_primary.is_(True),
+                PatientPhone.wrong_number_at.is_(None),
+            )
+            .values(wrong_number_at=clinic_time.now())
+        )
     if task.lead_id:
         lead = await session.get(Lead, task.lead_id)
         if lead:

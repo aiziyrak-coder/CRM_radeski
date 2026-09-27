@@ -182,17 +182,26 @@ async def approve(
     return {"approved": approved}
 
 
-@router.post("/ai-suggest")
-async def ai_suggest(session: SessionDep, _: Approver) -> dict[str, int]:
+def _enqueue_ai() -> None:
+    from app.workers.celery_app import celery_app
+
+    celery_app.send_task("jobs.ai_diagnoses")
+
+
+@router.post("/ai-suggest", status_code=status.HTTP_202_ACCEPTED)
+async def ai_suggest(_: Approver) -> dict[str, int]:
+    """Starts the AI proposals in the background (minutes for a few hundred texts: longer than
+    a browser request may wait); the list shows them as they arrive."""
     from app.integrations.openai_client import available, enabled
 
     if not enabled():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="ai_disabled")
     if not await available():
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="ai_budget_exceeded")
-    counts = await service.suggest_with_ai(session)
-    await session.commit()
-    return dict(counts)
+    if await service.ai_running():
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="already_running")
+    _enqueue_ai()
+    return {"queued": 1}
 
 
 @router.post("/sync")

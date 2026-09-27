@@ -104,6 +104,8 @@ class PatientPhone(UUIDPk, Base):
     number: Mapped[str] = mapped_column(String(16))  # E.164, +998XXXXXXXXX
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     note: Mapped[str | None] = mapped_column(String(100))  # e.g. "onasi", "ishxona"
+    # an operator's call result "wrong number": campaigns don't dial it again
+    wrong_number_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     patient: Mapped[Patient] = relationship(back_populates="phones")

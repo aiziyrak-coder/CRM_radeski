@@ -2,11 +2,12 @@ import uuid
 from datetime import date
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 
 from app.core import clinic_time
-from app.core.deps import CurrentUser, SessionDep, require_roles
+from app.core.deps import CurrentUser, SessionDep, client_ip, require_roles
+from app.modules.audit import service as audit
 from app.modules.reports import service
 from app.modules.users.models import Role, User
 
@@ -84,13 +85,20 @@ async def kpi(
 
 @router.get("/kpi.xlsx")
 async def kpi_xlsx(
+    request: Request,
     session: SessionDep,
-    _: Manager,
+    user: Manager,
     date_from: Annotated[date, Query(alias="from")],
     date_to: Annotated[date, Query(alias="to")],
 ) -> Response:
     _check_range(date_from, date_to)
     data = await service.kpi(session, date_from, date_to)
+    # TZ 3/8: exports are audited (who took which period's figures out of the CRM)
+    audit.record(
+        session, "report.export", user_id=user.id, entity="kpi",
+        after={"from": str(date_from), "to": str(date_to)}, ip=client_ip(request),
+    )  # fmt: skip
+    await session.commit()
     return Response(
         content=service.kpi_workbook(data, KPI_LABELS),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

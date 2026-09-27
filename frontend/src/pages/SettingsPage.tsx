@@ -163,7 +163,14 @@ function DoctorEditor({ doctor, isAdmin }: { doctor: Doctor; isAdmin: boolean })
   }
   const saveDoctor = useMutation({
     mutationFn: (body: Parameters<typeof updateDoctor>[1]) => updateDoctor(doctor.id, body),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['doctors'] }),
+    onSuccess: (saved) => {
+      // the saved doctor goes straight into the list: a quick next click builds on it, not on
+      // the pre-save props while the refetch is still running
+      queryClient.setQueriesData<(typeof saved)[]>({ queryKey: ['doctors'] }, (list) =>
+        Array.isArray(list) ? list.map((d) => (d.id === saved.id ? saved : d)) : list,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['doctors'] })
+    },
   })
   const addAbs = useMutation({
     mutationFn: () => addAbsence(doctor.id, { ...absence, reason: absence.reason || null }),

@@ -21,6 +21,7 @@ celery_app.conf.update(
     task_routes={
         "jobs.analyze_call": {"queue": "ai"},
         "jobs.weekly_digest": {"queue": "ai"},
+        "jobs.ai_diagnoses": {"queue": "ai"},
     },
     # ARXITEKTURA 4.1 — times are clinic local (Asia/Tashkent)
     beat_schedule={

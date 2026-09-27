@@ -48,6 +48,7 @@ async def test_create_normalizes_phone_and_sets_primary(client: AsyncClient, op:
             "display": "+998 90 000-12-34",
             "is_primary": True,
             "note": None,
+            "wrong_number_at": None,
         }
     ]
     assert p["kind"] == "active"

@@ -123,7 +123,8 @@
     "user_not_found": "Foydalanuvchi topilmadi",
     "not_authenticated": "Tizimga qayta kiring",
     "ai_budget_exceeded": "Bugungi AI limiti tugadi, ertaga qayta urinib ko'ring",
-    "absence_not_found": "Ta'til topilmadi (allaqachon o'chirilgan)"
+    "absence_not_found": "Ta'til topilmadi (allaqachon o'chirilgan)",
+    "already_running": "AI takliflari allaqachon tayyorlanmoqda"
   },
   "home": {
     "welcome": "Xush kelibsiz, {{name}}",
@@ -237,7 +238,8 @@
       "campaign.status": "Kampaniya holati",
       "auth.totp_enrolled": "Ikki bosqichli kirishni yoqdi",
       "auth.totp_failed": "Tasdiqlash kodi noto'g'ri",
-      "user.totp_reset": "Ikki bosqichli kirishni bekor qildi"
+      "user.totp_reset": "Ikki bosqichli kirishni bekor qildi",
+      "report.export": "Hisobot yuklab olindi"
     }
   },
   "profile": {
@@ -307,7 +309,8 @@
     "tagNoName": "Ismi yo'q",
     "legacyNote": "Eski bazadan import qilingan. Qo'ng'iroqda ma'lumotlarni aniqlab, kartani to'ldiring.",
     "allCategories": "Barcha tashxislar",
-    "categoryHint": "Tashxis toifasi"
+    "categoryHint": "Tashxis toifasi",
+    "wrongNumber": "Noto'g'ri raqam"
   },
   "kinds": {
     "active": "Faol bemor",
@@ -371,7 +374,7 @@
     },
     "legend": "Yashil raqam — toifasi tasdiqlangan bemorlar, sariq — tasdiqlashni kutayotgan takliflar. Toifani bossangiz, ro'yxat shu toifaga filtrlanadi.",
     "aiSuggest": "AI taklifi (toifasizlar uchun)",
-    "aiSuggested": "AI {{checked}} ta yozuvni ko'rdi, {{count}} tasiga toifa taklif qildi — tasdiqlashni kutmoqda"
+    "aiStarted": "AI takliflari fonda tayyorlanmoqda (bir necha daqiqa). Ro'yxat o'zi yangilanadi — taklif qilinganlar \"Taklif\" holatida chiqadi."
   },
   "schedule": {
     "title": "Jadval",
@@ -659,7 +662,8 @@
     "any": "Hammasi",
     "scriptB": "B skript (A/B sinov)",
     "noAb": "— sinovsiz —",
-    "abLine": "{{tasks}} vazifa, {{reached}} gaplashildi, {{booked}} yozildi ({{rate}})"
+    "abLine": "{{tasks}} vazifa, {{reached}} gaplashildi, {{booked}} yozildi ({{rate}})",
+    "finishConfirm": "Kampaniya yakunlansin? Ochiq qo'ng'iroqlari bekor qilinadi, uni qayta yoqib bo'lmaydi."
   },
   "reports": {
     "title": "Hisobotlar",
