@@ -10,7 +10,7 @@ Versiya 0.1 · 2026-09-26 · TZ bilan birga o'qiladi: [01_TZ.md](01_TZ.md)
 ```
                 ┌────────────────────────── Klinika serveri (O'zbekiston) ──────────────────────────┐
                 │                                                                                    │
- Operator ──────┼─► nginx (HTTPS, crm.radeski.uz) ─┬─► web (React SPA, statik fayllar)                │
+ Operator ──────┼─► nginx (HTTPS, crm.devflix.uz) ─┬─► web (React SPA, statik fayllar)                │
  brauzeri       │                                  ├─► api (FastAPI) ◄──► PostgreSQL 16              │
  (+ WebRTC      │                                  │        │   ▲         Redis 7 (navbat, kesh,     │
   softfon)      │                                  │        │   │          pub/sub)                  │
@@ -264,5 +264,5 @@ Server bitta, unda radeski.uz ham turibdi. GPU yo'q: STT va LLM OpenAI API orqal
 | Qo'ng'iroq yozuvlari | Kuniga ~150 qo'ng'iroq × 3 daqiqa ≈ oyiga ~5–10 GB (opus/mp3 formatida). 12 oy uchun 100 GB zaxira |
 | **Jami tavsiya** | **4 vCPU, 8–16 GB RAM, 200 GB SSD** |
 
-- Sayt va CRM alohida Docker Compose loyihalari va alohida bazalar sifatida ishlaydi, umumiy nginx orqali ulanadi: `radeski.uz` va `crm.radeski.uz`. CRM'dagi xato saytni to'xtatib qo'ymasligi kerak.
+- Sayt va CRM alohida Docker Compose loyihalari va alohida bazalar sifatida ishlaydi, umumiy nginx orqali ulanadi: `radeski.uz` va `crm.devflix.uz`. CRM'dagi xato saytni to'xtatib qo'ymasligi kerak.
 - Asterisk'ning SIP va RTP portlari firewall'da faqat Uztelecom IP manzillari uchun ochiladi.

@@ -5,7 +5,7 @@
 ```
 Bemor ──► Uztelecom ──SIP/RTP──► ofis routeri ──► server: pbx (Asterisk 20)
                                                        │ IVR → "operators" navbati → 101…104
-Operator brauzeri (JsSIP) ──wss://crm.radeski.uz/ws──► │
+Operator brauzeri (JsSIP) ──wss://crm.devflix.uz/ws──► │
                                                        │ har qo'ng'iroq tugaganda:
                                                        └─HTTP─► CRM /api/telephony/events
                                                                  ├─ calls jadvali (jurnal)

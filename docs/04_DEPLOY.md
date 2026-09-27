@@ -10,7 +10,7 @@ Bu hujjat serverning umumiy yo'riqnomasini Radeski CRM uchun aniq qiymatlar bila
 | Katalog | `/home/radeski-crm` |
 | Compose loyiha nomi | `radeski-crm` (`docker-compose.prod.yml` ichida `name:` bilan qotirilgan) |
 | HTTP port | `127.0.0.1:9250` (bo'sh 9200–9400 oralig'idan). Faqat `web` konteyneri port ochadi |
-| Domen | `crm.radeski.uz` → A yozuvi `87.192.230.208` |
+| Domen | `crm.devflix.uz` → A yozuvi `87.192.230.208` |
 | Volume'lar | `radeski_crm_pgdata`, `radeski_crm_redisdata`, `radeski_crm_recordings` (qo'ng'iroq yozuvlari), `radeski_crm_pbx_sounds` (IVR ovozlari) |
 | Zaxira | Har kuni 04:30 da (02:15, 03:00 va 03:15 boshqa loyihalarniki), 30 kun saqlanadi |
 | Server | 32 yadro, 94 GB RAM (~20 GB bo'sh), 573 GB bo'sh disk, GPU yo'q |
@@ -91,17 +91,17 @@ Muammoli qatorlar (xato telefon yoki sana) `data/legacy/import-problems.csv` fay
 
 ## 3. Domen va SSL (sudo kerak, bu qadamni server egasi bajaradi)
 
-1. DNS: `crm.radeski.uz` uchun A yozuvi → `87.192.230.208`.
+1. DNS: `crm.devflix.uz` uchun A yozuvi → `87.192.230.208`.
 2. **Yangi** nginx faylini yarating. Mavjud fayllarga tegmang:
 
 ```bash
-sudo nano /etc/nginx/sites-available/crm.radeski.uz
+sudo nano /etc/nginx/sites-available/crm.devflix.uz
 ```
 
 ```nginx
 server {
     listen 80;
-    server_name crm.radeski.uz;
+    server_name crm.devflix.uz;
     client_max_body_size 50m;
 
     location / {
@@ -122,7 +122,7 @@ server {
 3. Faylni yoqish va sintaksisni tekshirish:
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/crm.radeski.uz /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/crm.devflix.uz /etc/nginx/sites-enabled/
 ```
 
 ```bash
@@ -136,7 +136,7 @@ sudo systemctl reload nginx
 ```
 
 ```bash
-sudo certbot --nginx -d crm.radeski.uz
+sudo certbot --nginx -d crm.devflix.uz
 ```
 
 certbot HTTPS blokini qo'shgach, o'sha `listen 443 ssl` blokiga bitta qator qo'shing (brauzer CRM'ni

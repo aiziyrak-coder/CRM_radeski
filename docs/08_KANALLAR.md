@@ -25,7 +25,7 @@
    ```
    TELEGRAM_BOT_TOKEN=123456:ABC...
    TELEGRAM_WEBHOOK_SECRET=<openssl rand -hex 16>
-   PUBLIC_URL=https://crm.radeski.uz
+   PUBLIC_URL=https://crm.devflix.uz
    ```
 3. ```bash
    docker compose -p radeski-crm -f docker-compose.prod.yml up -d --no-deps api worker worker-ai beat
@@ -66,7 +66,7 @@ Meta ilovasi kerak (Instagram API with Instagram Login), `instagram_business_man
 ruxsati Meta tekshiruvidan o'tadi (bir necha hafta).
 
 1. developers.facebook.com → App → Instagram → API setup with Instagram login.
-2. Webhook: `https://crm.radeski.uz/api/integrations/instagram/webhook`, verify token —
+2. Webhook: `https://crm.devflix.uz/api/integrations/instagram/webhook`, verify token —
    `.env` dagi `INSTAGRAM_VERIFY_TOKEN`, obuna: `messages`.
 3. `.env`:
    ```

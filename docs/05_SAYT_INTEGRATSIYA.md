@@ -15,7 +15,7 @@ Bir ariza ikki yo'l bilan kelsa ham CRM'da **bitta** murojaat bo'ladi (saytdagi 
 
 ## Webhook
 
-- URL: `https://crm.radeski.uz/api/integrations/site/appointments` (serverning ichida:
+- URL: `https://crm.devflix.uz/api/integrations/site/appointments` (serverning ichida:
   `http://127.0.0.1:9250/api/integrations/site/appointments`)
 - Metod: `POST`, `Content-Type: application/json`
 - Imzo: `X-Signature: sha256=<hex>` — so'rov tanasining **aynan o'sha baytlari** ustidan
