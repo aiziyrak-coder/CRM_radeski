@@ -1,58 +1,179 @@
 import { useQuery } from '@tanstack/react-query'
+import type { LucideIcon } from 'lucide-react'
+import {
+  BarChart3,
+  CalendarDays,
+  CircleUser,
+  ClipboardList,
+  History,
+  LayoutDashboard,
+  ListChecks,
+  LogOut,
+  Megaphone,
+  Menu,
+  MessagesSquare,
+  PhoneCall,
+  Plug,
+  Settings,
+  ShieldCheck,
+  Stethoscope,
+  UserCog,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react'
 import { Suspense, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { NavLink, Outlet } from 'react-router'
+import { Link, NavLink, Outlet } from 'react-router'
 import AlertsBell from './AlertsBell'
 import PageErrorBoundary from './ErrorBoundary'
+import GlobalSearch from './GlobalSearch'
 import { api, type Language, type User } from '../lib/api'
 import { useAuth } from '../lib/auth-context'
 import { getUnread } from '../lib/messaging'
-import { navFor } from '../lib/navigation'
+import { NAV_GROUPS, navFor } from '../lib/navigation'
+import { getTaskSummary } from '../lib/ops'
 import { SoftphoneProvider } from '../lib/softphone'
 import { CallPanel, SoftphoneStatus } from './Softphone'
-import { Badge, Button } from './ui'
+import { Avatar, Badge, Button } from './ui'
+import { cx } from '../lib/cx'
+
+const ICONS: Record<string, LucideIcon> = {
+  '/': LayoutDashboard,
+  '/tasks': ListChecks,
+  '/inbox': MessagesSquare,
+  '/calls': PhoneCall,
+  '/leads': UserPlus,
+  '/patients': Users,
+  '/schedule': CalendarDays,
+  '/my-day': Stethoscope,
+  '/diagnoses': ClipboardList,
+  '/campaigns': Megaphone,
+  '/qa': ShieldCheck,
+  '/reports': BarChart3,
+  '/users': UserCog,
+  '/audit': History,
+  '/integrations': Plug,
+  '/settings': Settings,
+  '/profile': CircleUser,
+}
+
+function Counter({ n, tone = 'teal' }: { n: number | undefined; tone?: 'teal' | 'red' }) {
+  if (!n) return null
+  return (
+    <span
+      className={cx(
+        'ml-auto rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums',
+        tone === 'red' ? 'bg-red-100 text-red-700' : 'bg-teal-100 text-teal-800',
+      )}
+    >
+      {n > 99 ? '99+' : n}
+    </span>
+  )
+}
 
 function Sidebar({ onNavigate }: { onNavigate: () => void }) {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const inbox = Boolean(user && navFor(user.role).some((i) => i.path === '/inbox'))
+  const items = user ? navFor(user.role) : []
+  const has = (path: string) => items.some((i) => i.path === path)
   const { data: unread } = useQuery({
     queryKey: ['inbox', 'unread'],
     queryFn: getUnread,
-    enabled: inbox,
+    enabled: has('/inbox'),
+    refetchInterval: 30_000,
+  })
+  const { data: summary } = useQuery({
+    queryKey: ['tasks', 'summary'],
+    queryFn: getTaskSummary,
+    enabled: has('/tasks'),
     refetchInterval: 30_000,
   })
   if (!user) return null
+  const counters: Record<string, { n?: number; tone?: 'teal' | 'red' }> = {
+    '/inbox': { n: unread?.conversations },
+    '/tasks': { n: summary?.total_due, tone: summary?.overdue ? 'red' : 'teal' },
+    '/leads': { n: summary?.lead_sla_breached, tone: 'red' },
+  }
   return (
     <>
-      <div className="border-b border-slate-200 px-5 py-4">
-        <div className="text-lg font-semibold text-teal-800">{t('app.title')}</div>
-        <div className="text-xs text-slate-500">{t('app.clinic')}</div>
-      </div>
-      <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
-        {navFor(user.role).map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            end={item.path === '/'}
-            onClick={onNavigate}
-            className={({ isActive }) =>
-              [
-                'flex items-center justify-between rounded-md px-3 py-2 text-sm',
-                isActive ? 'bg-teal-50 font-medium text-teal-800' : 'text-slate-700 hover:bg-slate-100',
-              ].join(' ')
-            }
-          >
-            <span>{t(item.labelKey)}</span>
-            {item.soon && <Badge>{t('soon.badge')}</Badge>}
-            {item.path === '/inbox' && (unread?.conversations ?? 0) > 0 && (
-              <span className="rounded-full bg-teal-700 px-1.5 text-[11px] text-white tabular-nums">
-                {unread!.conversations}
-              </span>
-            )}
-          </NavLink>
-        ))}
+      <Link to="/" onClick={onNavigate} className="flex items-center gap-3 px-5 py-4">
+        <span className="flex size-9 items-center justify-center rounded-xl bg-teal-700 text-sm font-bold text-white shadow-sm">
+          R
+        </span>
+        <span>
+          <span className="block text-[15px] leading-tight font-semibold text-slate-900">
+            {t('app.title')}
+          </span>
+          <span className="block text-xs text-slate-500">{t('app.clinic')}</span>
+        </span>
+      </Link>
+      <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4">
+        {NAV_GROUPS.filter((g) => g !== 'me').map((group) => {
+          const groupItems = items.filter((i) => i.group === group)
+          if (!groupItems.length) return null
+          return (
+            <div key={group}>
+              <div className="px-3 pb-1 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+                {t(`navGroups.${group}`)}
+              </div>
+              <div className="space-y-0.5">
+                {groupItems.map((item) => {
+                  const Icon = ICONS[item.path] ?? LayoutDashboard
+                  const c = counters[item.path]
+                  return (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      end={item.path === '/'}
+                      onClick={onNavigate}
+                      className={({ isActive }) =>
+                        cx(
+                          'group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors',
+                          isActive
+                            ? 'bg-teal-700 font-medium text-white shadow-sm'
+                            : 'text-slate-700 hover:bg-slate-100',
+                        )
+                      }
+                    >
+                      {({ isActive }) => (
+                        <>
+                          <Icon
+                            className={cx(
+                              'size-4 shrink-0',
+                              isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600',
+                            )}
+                            aria-hidden
+                          />
+                          <span className="truncate">{t(item.labelKey)}</span>
+                          {item.soon && <Badge>{t('soon.badge')}</Badge>}
+                          {c && !isActive && <Counter n={c.n} tone={c.tone} />}
+                        </>
+                      )}
+                    </NavLink>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
       </nav>
+      <NavLink
+        to="/profile"
+        onClick={onNavigate}
+        className={({ isActive }) =>
+          cx(
+            'flex items-center gap-3 border-t border-slate-200 px-4 py-3',
+            isActive ? 'bg-teal-50' : 'hover:bg-slate-50',
+          )
+        }
+      >
+        <Avatar name={user.full_name} size="sm" />
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium text-slate-900">{user.full_name}</span>
+          <span className="block text-xs text-slate-500">{t(`roles.${user.role}`)}</span>
+        </span>
+      </NavLink>
     </>
   )
 }
@@ -73,12 +194,13 @@ export default function Layout() {
   }
   const otherLang: Language = i18n.language === 'uz' ? 'ru' : 'uz'
   const closeMenu = () => setMenuOpen(false)
+  const canSearch = navFor(user.role).some((i) => i.path === '/patients')
 
   return (
     <SoftphoneProvider>
       <div className="flex min-h-screen bg-slate-50 text-slate-900">
         {/* desktop: fixed sidebar; tablet/phone: slide-over opened from the header */}
-        <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
+        <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
           <Sidebar onNavigate={closeMenu} />
         </aside>
         {menuOpen && (
@@ -88,47 +210,53 @@ export default function Layout() {
               aria-label={t('app.close')}
               onClick={closeMenu}
             />
-            <aside className="relative flex h-full w-64 flex-col bg-white shadow-xl">
+            <aside className="relative flex h-full w-72 flex-col bg-white shadow-xl">
+              <button
+                className="absolute top-4 right-3 rounded-md p-1.5 text-slate-500 hover:bg-slate-100"
+                aria-label={t('app.close')}
+                onClick={closeMenu}
+              >
+                <X className="size-4" aria-hidden />
+              </button>
               <Sidebar onNavigate={closeMenu} />
             </aside>
           </div>
         )}
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 lg:px-6">
+          <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-200 bg-white/90 px-4 py-2.5 backdrop-blur lg:px-6">
             <button
               className="rounded-md p-2 text-slate-700 hover:bg-slate-100 lg:hidden"
               aria-label={t('app.menu')}
               onClick={() => setMenuOpen(true)}
             >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 20 20"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-              >
-                <path d="M3 5h14M3 10h14M3 15h14" strokeLinecap="round" />
-              </svg>
+              <Menu className="size-5" aria-hidden />
             </button>
-            <span className="font-semibold text-teal-800 lg:hidden">{t('app.title')}</span>
-            <div className="ml-auto flex items-center gap-3">
+            {canSearch ? (
+              <div className="hidden min-w-0 flex-1 md:block">
+                <GlobalSearch />
+              </div>
+            ) : (
+              <span className="font-semibold text-teal-800 lg:hidden">{t('app.title')}</span>
+            )}
+            <div className="ml-auto flex items-center gap-2">
               <AlertsBell />
               <SoftphoneStatus />
-              <div className="hidden text-right sm:block">
-                <div className="text-sm font-medium">{user.full_name}</div>
-                <div className="text-xs text-slate-500">{t(`roles.${user.role}`)}</div>
-              </div>
-              <Button variant="secondary" onClick={() => void switchLanguage(otherLang)}>
+              <Button variant="ghost" size="sm" onClick={() => void switchLanguage(otherLang)}>
                 {t(`lang.${otherLang}`)}
               </Button>
-              <Button variant="ghost" onClick={() => void logout()}>
-                {t('auth.logout')}
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={LogOut}
+                onClick={() => void logout()}
+                aria-label={t('auth.logout')}
+              >
+                <span className="hidden sm:inline">{t('auth.logout')}</span>
               </Button>
             </div>
           </header>
-          <main className="flex-1 p-4 lg:p-6">
+          <main className="mx-auto w-full max-w-[1400px] flex-1 p-4 lg:p-8">
             <Suspense fallback={<p className="text-sm text-slate-500">{t('app.loading')}</p>}>
               <PageErrorBoundary>
                 <Outlet />

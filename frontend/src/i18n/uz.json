@@ -7,7 +7,8 @@
     "menu": "Menyu",
     "remove": "Olib tashlash",
     "prev": "Oldingi",
-    "next": "Keyingi"
+    "next": "Keyingi",
+    "help": "Izoh"
   },
   "nav": {
     "home": "Bosh sahifa",
@@ -2054,5 +2055,17 @@
     "excimer": "Excimer lazer",
     "morpheus8": "Morpheus 8",
     "ipl": "IPL"
+  },
+  "navGroups": {
+    "work": "Ish",
+    "clinic": "Klinika",
+    "growth": "Tahlil va o'sish",
+    "admin": "Boshqaruv",
+    "me": "Men"
+  },
+  "search": {
+    "placeholder": "Bemorni qidirish: ism yoki telefon",
+    "none": "Hech kim topilmadi",
+    "hint": "Ism kirill yoki lotinda, telefonning istalgan qismi. \"/\" — qidiruvga o'tish"
   }
 }

@@ -1,9 +1,13 @@
 import type { Role } from './api'
 
+export type NavGroup = 'work' | 'clinic' | 'growth' | 'admin' | 'me'
+
 export type NavItem = {
   path: string
   labelKey: string
   roles: readonly Role[]
+  /** sidebar section (the menu is grouped so 15 items stay readable) */
+  group: NavGroup
   /** module is planned but not built yet (shows a placeholder page) */
   soon?: boolean
 }
@@ -13,32 +17,61 @@ const ALL: readonly Role[] = ['operator', 'supervisor', 'registrar', 'doctor', '
 // Single source of truth for the menu and route guards (backend enforces the same roles on its API).
 export const NAV_ITEMS: readonly NavItem[] = [
   // the registrar starts on the schedule's "today" screen instead (see landingFor)
-  { path: '/', labelKey: 'nav.home', roles: ALL.filter((r) => r !== 'registrar') },
-  { path: '/tasks', labelKey: 'nav.tasks', roles: ['operator', 'supervisor', 'admin'] },
-  { path: '/inbox', labelKey: 'nav.inbox', roles: ['operator', 'supervisor', 'registrar', 'admin'] },
-  { path: '/calls', labelKey: 'nav.calls', roles: ['operator', 'supervisor', 'owner', 'admin'] },
-  { path: '/leads', labelKey: 'nav.leads', roles: ['operator', 'supervisor', 'registrar', 'admin'] },
+  { path: '/', group: 'work', labelKey: 'nav.home', roles: ALL.filter((r) => r !== 'registrar') },
+  { path: '/tasks', group: 'work', labelKey: 'nav.tasks', roles: ['operator', 'supervisor', 'admin'] },
+  {
+    path: '/inbox',
+    group: 'work',
+    labelKey: 'nav.inbox',
+    roles: ['operator', 'supervisor', 'registrar', 'admin'],
+  },
+  {
+    path: '/calls',
+    group: 'work',
+    labelKey: 'nav.calls',
+    roles: ['operator', 'supervisor', 'owner', 'admin'],
+  },
+  {
+    path: '/leads',
+    group: 'work',
+    labelKey: 'nav.leads',
+    roles: ['operator', 'supervisor', 'registrar', 'admin'],
+  },
   {
     path: '/patients',
+    group: 'clinic',
     labelKey: 'nav.patients',
     roles: ['operator', 'supervisor', 'registrar', 'admin'],
   },
   {
     path: '/schedule',
+    group: 'clinic',
     labelKey: 'nav.schedule',
     roles: ['operator', 'supervisor', 'registrar', 'admin'],
   },
-  { path: '/my-day', labelKey: 'nav.myDay', roles: ['doctor'] },
-  { path: '/diagnoses', labelKey: 'nav.diagnoses', roles: ['doctor', 'supervisor', 'admin'] },
-  { path: '/campaigns', labelKey: 'nav.campaigns', roles: ['supervisor', 'admin'] },
-  { path: '/qa', labelKey: 'nav.qa', roles: ['supervisor', 'owner', 'admin'] },
-  { path: '/reports', labelKey: 'nav.reports', roles: ['operator', 'supervisor', 'owner', 'admin'] },
-  { path: '/users', labelKey: 'nav.users', roles: ['admin'] },
-  { path: '/audit', labelKey: 'nav.audit', roles: ['admin', 'owner'] },
-  { path: '/integrations', labelKey: 'nav.integrations', roles: ['admin'] },
-  { path: '/settings', labelKey: 'nav.settings', roles: ['supervisor', 'admin'] },
-  { path: '/profile', labelKey: 'nav.profile', roles: ALL },
+  { path: '/my-day', group: 'clinic', labelKey: 'nav.myDay', roles: ['doctor'] },
+  {
+    path: '/diagnoses',
+    group: 'clinic',
+    labelKey: 'nav.diagnoses',
+    roles: ['doctor', 'supervisor', 'admin'],
+  },
+  { path: '/campaigns', group: 'growth', labelKey: 'nav.campaigns', roles: ['supervisor', 'admin'] },
+  { path: '/qa', group: 'growth', labelKey: 'nav.qa', roles: ['supervisor', 'owner', 'admin'] },
+  {
+    path: '/reports',
+    group: 'growth',
+    labelKey: 'nav.reports',
+    roles: ['operator', 'supervisor', 'owner', 'admin'],
+  },
+  { path: '/users', group: 'admin', labelKey: 'nav.users', roles: ['admin'] },
+  { path: '/audit', group: 'admin', labelKey: 'nav.audit', roles: ['admin', 'owner'] },
+  { path: '/integrations', group: 'admin', labelKey: 'nav.integrations', roles: ['admin'] },
+  { path: '/settings', group: 'admin', labelKey: 'nav.settings', roles: ['supervisor', 'admin'] },
+  { path: '/profile', group: 'me', labelKey: 'nav.profile', roles: ALL },
 ]
+
+export const NAV_GROUPS: readonly NavGroup[] = ['work', 'clinic', 'growth', 'admin', 'me']
 
 export const ROLES: readonly Role[] = ALL
 
