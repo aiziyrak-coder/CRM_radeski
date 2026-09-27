@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any, Literal
@@ -17,6 +18,7 @@ from app.modules.patients.models import Patient
 from app.modules.telephony.models import Call
 from app.modules.users.models import Role, User
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 MANAGERS = (Role.SUPERVISOR, Role.ADMIN, Role.OWNER)
@@ -137,6 +139,77 @@ async def qa_calls(
     )  # fmt: skip
 
 
+@router.get("/qa/trend")
+async def qa_trend(
+    session: SessionDep,
+    _: Manager,
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+    user_id: uuid.UUID | None = None,
+    bucket: Literal["day", "week"] = "day",
+) -> dict[str, Any]:
+    await qa.criteria_all(session)
+    return await qa.trend(session, *_period(date_from, date_to), user_id=user_id, bucket=bucket)
+
+
+@router.get("/qa/violations")
+async def qa_violations(
+    session: SessionDep,
+    _: Manager,
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+    user_id: uuid.UUID | None = None,
+    code: Annotated[str | None, Query(max_length=40)] = None,
+    kind: Literal["all", "violation", "red_flag"] = "all",
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """Missed criteria and red flags across calls, each with its quote and moment."""
+    return await qa.violations(
+        session, *_period(date_from, date_to), user_id=user_id, code=code, kind=kind,
+        limit=limit, offset=offset,
+    )  # fmt: skip
+
+
+@router.get("/qa/queue")
+async def qa_queue(
+    session: SessionDep,
+    _: Manager,
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+) -> dict[str, Any]:
+    """Recorded calls without a usable analysis: failed, waiting or never started."""
+    return await qa.queue(session, *_period(date_from, date_to))
+
+
+def _enqueue_analysis(call_id: uuid.UUID) -> bool:
+    from app.workers.celery_app import celery_app
+
+    try:
+        celery_app.send_task("jobs.analyze_call", args=[str(call_id)])
+    except Exception:  # broker down: the half-hourly retry job still picks it up
+        log.warning("could not queue the analysis of call %s", call_id)
+        return False
+    return True
+
+
+class RetryIn(BaseModel):
+    call_ids: list[uuid.UUID] = Field(min_length=1, max_length=200)
+
+
+@router.post("/qa/retry")
+async def qa_retry(body: RetryIn, session: SessionDep, _: Editor) -> dict[str, int]:
+    """Supervisor: analyse these calls again with a fresh set of attempts."""
+    if not openai_client.enabled():
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="ai_disabled")
+    ids = list(dict.fromkeys(body.call_ids))
+    reset = [cid for cid in ids if await qa.reset_for_retry(session, cid)]
+    await session.commit()
+    for cid in reset:
+        _enqueue_analysis(cid)
+    return {"queued": len(reset), "skipped": len(ids) - len(reset)}
+
+
 class CriterionOut(BaseModel):
     id: uuid.UUID
     code: str
@@ -161,6 +234,14 @@ async def criteria(session: SessionDep, _: Manager) -> list[CriterionOut]:
     rows = await qa.criteria_all(session)
     await session.commit()
     return [CriterionOut.model_validate(c, from_attributes=True) for c in rows]
+
+
+@router.post("/criteria", status_code=status.HTTP_201_CREATED)
+async def create_criterion(body: CriterionIn, session: SessionDep, _: Editor) -> CriterionOut:
+    """A new criterion; its code is derived from the Uzbek name (shown to the model)."""
+    c = await qa.add_criterion(session, **body.model_dump())
+    await session.commit()
+    return CriterionOut.model_validate(c, from_attributes=True)
 
 
 @router.put("/criteria/{criterion_id}")
@@ -193,6 +274,40 @@ class DigestOut(BaseModel):
 async def latest_digest(session: SessionDep, _: Manager) -> DigestOut | None:
     d = await session.scalar(select(AiDigest).order_by(AiDigest.created_at.desc()).limit(1))
     return DigestOut.model_validate(d, from_attributes=True) if d else None
+
+
+class DigestItem(BaseModel):
+    id: uuid.UUID
+    period_from: date
+    period_to: date
+    created_at: datetime
+    calls_analysed: int
+    avg_score: int | None
+    has_content: bool
+
+
+@router.get("/digests")
+async def digests(
+    session: SessionDep, _: Manager, limit: Annotated[int, Query(ge=1, le=100)] = 30
+) -> list[DigestItem]:
+    """Digest history, newest first (the weekly job and the ones made by hand)."""
+    rows = await session.scalars(select(AiDigest).order_by(AiDigest.created_at.desc()).limit(limit))
+    return [
+        DigestItem(
+            id=d.id, period_from=d.period_from, period_to=d.period_to, created_at=d.created_at,
+            calls_analysed=(d.stats or {}).get("calls_analysed", 0),
+            avg_score=(d.stats or {}).get("avg_score"), has_content=d.content is not None,
+        )
+        for d in rows
+    ]  # fmt: skip
+
+
+@router.get("/digests/{digest_id}")
+async def digest(digest_id: uuid.UUID, session: SessionDep, _: Manager) -> DigestOut:
+    d = await session.get(AiDigest, digest_id)
+    if d is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="digest_not_found")
+    return DigestOut.model_validate(d, from_attributes=True)
 
 
 @router.post("/digest")

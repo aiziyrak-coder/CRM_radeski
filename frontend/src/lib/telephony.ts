@@ -80,6 +80,42 @@ export function getCalls(filters: {
   return api<CallRecord[]>(`/telephony/calls?${q}`)
 }
 
+export type CallLogItem = CallRecord & {
+  task_type: string | null
+  task_outcome: string | null
+  task_outcome_reason: string | null
+  ai_outcome: string | null
+  called_back_at: string | null
+}
+export type CallLogSummary = {
+  total: number
+  inbound: number
+  outbound: number
+  answered: number
+  missed: number
+  missed_not_called_back: number
+  outbound_answered: number
+  avg_wait_sec: number | null
+  talk_minutes: number
+}
+export type CallLogFilters = {
+  from: string
+  to: string
+  direction?: string
+  /** a CallStatus, or 'unanswered' = every missed inbound kind */
+  status?: string
+  user_id?: string
+  who?: 'all' | 'mine'
+  q?: string
+  offset?: number
+}
+export const CALL_LOG_PAGE = 50
+export function getCallLog(f: CallLogFilters) {
+  const q = new URLSearchParams({ limit: String(CALL_LOG_PAGE) })
+  for (const [k, v] of Object.entries(f)) if (v !== undefined && v !== '' && v !== 0) q.set(k, String(v))
+  return api<{ total: number; items: CallLogItem[]; summary: CallLogSummary }>(`/telephony/call-log?${q}`)
+}
+
 /** <audio> can't send the bearer token, so the recording is fetched and played from a blob URL. */
 export async function recordingUrl(callId: string): Promise<string> {
   return URL.createObjectURL(await apiBlob(`/telephony/calls/${callId}/recording`))

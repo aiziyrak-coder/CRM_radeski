@@ -7,10 +7,11 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import clinic_time
+from app.core.text import search_key
 from app.integrations import openai_client
 from app.integrations.llm import LlmError, get_llm
 from app.modules.ai.models import AiDigest, AnalysisStatus, CallAnalysis, QaCriterion
@@ -19,7 +20,7 @@ from app.modules.ai.service import active_criteria
 from app.modules.patients.models import Patient, PatientCondition
 from app.modules.scheduling.models import Appointment
 from app.modules.tasks.models import Task, TaskAttempt, TaskStatus
-from app.modules.telephony.models import Call
+from app.modules.telephony.models import Call, RecordingStatus
 from app.modules.users.models import User
 
 
@@ -341,3 +342,250 @@ async def make_digest(session: AsyncSession, date_to: date | None = None) -> AiD
 async def criteria_all(session: AsyncSession) -> list[QaCriterion]:
     await active_criteria(session)  # seeds the defaults on first use
     return list(await session.scalars(select(QaCriterion).order_by(QaCriterion.sort_order)))
+
+
+def _code(name: str) -> str:
+    slug = "_".join(search_key(name).split())[:30].strip("_")
+    return slug or "criterion"
+
+
+async def add_criterion(session: AsyncSession, **fields: Any) -> QaCriterion:
+    """A new QA criterion, scored from the next analysed call on (TZ 4.8.1 #3)."""
+    await active_criteria(session)  # the defaults come first
+    base = _code(fields["name_uz"])
+    taken = set(await session.scalars(select(QaCriterion.code)))
+    code, n = base, 2
+    while code in taken:
+        code, n = f"{base[:36]}_{n}", n + 1
+    last = await session.scalar(select(func.max(QaCriterion.sort_order)))
+    c = QaCriterion(code=code, sort_order=(last or 0) + 1, **fields)
+    session.add(c)
+    await session.flush()
+    return c
+
+
+# --- trends, violations, the analysis queue (QA panel, TZ 4.8.1) ------------------------------
+
+
+def bucket_start(day: date, bucket: str) -> date:
+    """The day itself, or the Monday of its week."""
+    return day - timedelta(days=day.weekday()) if bucket == "week" else day
+
+
+def _buckets(date_from: date, date_to: date, bucket: str) -> list[date]:
+    out, day = [], bucket_start(date_from, bucket)
+    step = timedelta(days=7 if bucket == "week" else 1)
+    while day <= date_to:
+        out.append(day)
+        day += step
+    return out
+
+
+async def trend(
+    session: AsyncSession,
+    date_from: date,
+    date_to: date,
+    *,
+    user_id: uuid.UUID | None = None,
+    bucket: str = "day",
+) -> dict[str, Any]:
+    """Average score per day/week (overall and per operator) and each criterion's pass rate."""
+    start, end = _range(date_from, date_to)
+    stmt = (
+        select(Call.started_at, Call.user_id, CallAnalysis.score, CallAnalysis.criteria)
+        .join(Call, Call.id == CallAnalysis.call_id)
+        .where(
+            CallAnalysis.status == AnalysisStatus.READY,
+            Call.started_at >= start,
+            Call.started_at < end,
+        )
+    )
+    if user_id:
+        stmt = stmt.where(Call.user_id == user_id)
+    rows = (await session.execute(stmt)).all()
+    keys = _buckets(date_from, date_to, bucket)
+    overall: dict[date, list[int | None]] = {k: [] for k in keys}
+    per_user: dict[Any, dict[date, list[int | None]]] = {}
+    passed: dict[str, Counter] = {}
+    applicable: dict[str, Counter] = {}
+    for started_at, uid, score, results in rows:
+        k = bucket_start(clinic_time.local(started_at).date(), bucket)
+        overall.setdefault(k, []).append(score)
+        per_user.setdefault(uid, {}).setdefault(k, []).append(score)
+        for r in results or []:
+            if r.get("passed") is not None:
+                applicable.setdefault(r["code"], Counter())[k] += 1
+                passed.setdefault(r["code"], Counter())[k] += bool(r["passed"])
+    ids = [u for u in per_user if u is not None]
+    names = dict(
+        (await session.execute(select(User.id, User.full_name).where(User.id.in_(ids)))).all()
+    )
+    criteria = list(await session.scalars(select(QaCriterion).order_by(QaCriterion.sort_order)))
+
+    def points(scores: dict[date, list[int | None]]) -> list[dict[str, Any]]:
+        return [
+            {
+                "start": k.isoformat(),
+                "calls": len(scores.get(k, [])),
+                "avg_score": _avg(scores.get(k, [])),
+            }
+            for k in keys
+        ]
+
+    def rates(code: str) -> list[dict[str, Any]]:
+        ok, total = passed.get(code, Counter()), applicable.get(code, Counter())
+        return [
+            {"start": k.isoformat(), "applicable": total[k], "pass_rate": _rate(ok[k], total[k])}
+            for k in keys
+        ]
+
+    return {
+        "bucket": bucket,
+        "points": points(overall),
+        "operators": sorted(
+            (
+                {
+                    "user_id": uid,
+                    "name": names.get(uid, "—") if uid else "—",
+                    "calls": sum(len(v) for v in scores.values()),
+                    "points": points(scores),
+                }
+                for uid, scores in per_user.items()
+            ),
+            key=lambda o: -o["calls"],
+        ),
+        "criteria": [
+            {
+                "code": c.code,
+                "name_uz": c.name_uz,
+                "name_ru": c.name_ru,
+                "active": c.active,
+                "points": rates(c.code),
+            }
+            for c in criteria
+        ],
+    }
+
+
+async def violations(
+    session: AsyncSession,
+    date_from: date,
+    date_to: date,
+    *,
+    user_id: uuid.UUID | None = None,
+    code: str | None = None,
+    kind: str = "all",
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Every missed criterion and red flag of the period's calls, newest first, each with the
+    quote and the second of the recording it was said at (TZ 4.8.1 #6)."""
+    start, end = _range(date_from, date_to)
+    # CASE guards jsonb_array_length against a missing list or a JSON null
+    v = CallAnalysis.violations
+    has_violations = (
+        case((func.jsonb_typeof(v) == "array", func.jsonb_array_length(v)), else_=0) > 0
+    )
+    stmt = (
+        select(
+            CallAnalysis.id, Call.id, Call.started_at, Call.user_id, User.full_name,
+            Call.patient_id, Patient.full_name, CallAnalysis.violations, CallAnalysis.red_flags,
+            CallAnalysis.flags_reviewed_at,
+        )
+        .join(Call, Call.id == CallAnalysis.call_id)
+        .outerjoin(User, User.id == Call.user_id)
+        .outerjoin(Patient, Patient.id == Call.patient_id)
+        .where(
+            CallAnalysis.status == AnalysisStatus.READY,
+            Call.started_at >= start,
+            Call.started_at < end,
+            has_violations | CallAnalysis.has_red_flags,
+        )
+        .order_by(Call.started_at.desc())
+    )  # fmt: skip
+    if user_id:
+        stmt = stmt.where(Call.user_id == user_id)
+    items: list[dict[str, Any]] = []
+    counts: Counter = Counter()
+    for aid, cid, at, uid, uname, pid, pname, vs, flags, reviewed in await session.execute(stmt):
+        found = []
+        if kind in ("all", "violation"):
+            found += [("violation", v["criterion"], v) for v in vs or []]
+        if kind in ("all", "red_flag"):
+            found += [("red_flag", f["code"], f) for f in flags or []]
+        for k, c, v in found:
+            counts[c] += 1
+            if code and c != code:
+                continue
+            items.append(
+                {
+                    "analysis_id": aid, "call_id": cid, "started_at": at, "user_id": uid,
+                    "user_name": uname, "patient_id": pid, "patient_name": pname, "kind": k,
+                    "code": c, "quote": v.get("quote") or "", "at": v.get("at"),
+                    "reviewed": k == "red_flag" and reviewed is not None,
+                }
+            )  # fmt: skip
+    return {"total": len(items), "items": items[offset : offset + limit], "counts": dict(counts)}
+
+
+# a recorded call that should have an analysis but has no usable one (yet)
+QUEUE_STATUSES = (
+    AnalysisStatus.FAILED, AnalysisStatus.PENDING, AnalysisStatus.TRANSCRIBING,
+    AnalysisStatus.ANALYZING,
+)  # fmt: skip
+
+
+async def queue(
+    session: AsyncSession, date_from: date, date_to: date, *, limit: int = 100
+) -> dict[str, Any]:
+    """Recorded calls with no analysis yet, a failed one or one still in progress."""
+    start, end = _range(date_from, date_to)
+    stmt = (
+        select(
+            Call.id, Call.started_at, Call.direction, Call.talk_seconds, User.full_name,
+            Call.patient_id, Patient.full_name, CallAnalysis.status, CallAnalysis.attempts,
+            CallAnalysis.error, CallAnalysis.updated_at,
+        )
+        .outerjoin(CallAnalysis, CallAnalysis.call_id == Call.id)
+        .outerjoin(User, User.id == Call.user_id)
+        .outerjoin(Patient, Patient.id == Call.patient_id)
+        .where(
+            Call.recording_status == RecordingStatus.READY,
+            Call.started_at >= start,
+            Call.started_at < end,
+            CallAnalysis.id.is_(None) | CallAnalysis.status.in_(QUEUE_STATUSES),
+        )
+        .order_by(Call.started_at.desc())
+    )  # fmt: skip
+    items = [
+        {
+            "call_id": cid, "started_at": at, "direction": direction.value,
+            "talk_seconds": talk, "user_name": uname, "patient_id": pid, "patient_name": pname,
+            "status": st.value if st else "missing", "attempts": attempts or 0, "error": error,
+            "updated_at": updated,
+        }
+        for cid, at, direction, talk, uname, pid, pname, st, attempts, error, updated in (
+            await session.execute(stmt)
+        )
+    ]  # fmt: skip
+    return {
+        "total": len(items),
+        "counts": dict(Counter(i["status"] for i in items)),
+        "items": items[:limit],
+    }
+
+
+async def reset_for_retry(session: AsyncSession, call_id: uuid.UUID) -> bool:
+    """Give a call's analysis a fresh set of attempts; False when there's nothing to redo
+    (no recording, or it's already analysed / skipped)."""
+    call = await session.get(Call, call_id)
+    if call is None or call.recording_status is not RecordingStatus.READY:
+        return False
+    a = await session.scalar(select(CallAnalysis).where(CallAnalysis.call_id == call_id))
+    if a is None:
+        return True  # never started: the worker creates the row
+    if a.status not in QUEUE_STATUSES:
+        return False
+    a.status, a.attempts, a.error = AnalysisStatus.PENDING, 0, None
+    await session.flush()
+    return True

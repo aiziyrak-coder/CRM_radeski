@@ -152,6 +152,86 @@ export const updateCriterion = (
 export const getDigest = () => api<Digest | null>('/ai/digest')
 export const makeDigest = () => api<Digest>('/ai/digest', { method: 'POST' })
 
+export const createCriterion = (
+  body: Pick<QaCriterion, 'name_uz' | 'name_ru' | 'description' | 'weight' | 'active'>,
+) => api<QaCriterion>('/ai/criteria', { method: 'POST', body })
+
+export type DigestItem = {
+  id: string
+  period_from: string
+  period_to: string
+  created_at: string
+  calls_analysed: number
+  avg_score: number | null
+  has_content: boolean
+}
+export const getDigests = () => api<DigestItem[]>('/ai/digests')
+export const getDigestById = (id: string) => api<Digest>(`/ai/digests/${id}`)
+
+export type TrendPoint = { start: string; calls: number; avg_score: number | null }
+export type QaTrend = {
+  bucket: 'day' | 'week'
+  points: TrendPoint[]
+  operators: { user_id: string | null; name: string; calls: number; points: TrendPoint[] }[]
+  criteria: {
+    code: string
+    name_uz: string
+    name_ru: string
+    active: boolean
+    points: { start: string; applicable: number; pass_rate: number | null }[]
+  }[]
+}
+export const getQaTrend = (from: string, to: string, bucket: 'day' | 'week', userId?: string) => {
+  const q = new URLSearchParams({ from, to, bucket })
+  if (userId) q.set('user_id', userId)
+  return api<QaTrend>(`/ai/qa/trend?${q}`)
+}
+
+export type ViolationItem = {
+  analysis_id: string
+  call_id: string
+  started_at: string
+  user_id: string | null
+  user_name: string | null
+  patient_id: string | null
+  patient_name: string | null
+  kind: 'violation' | 'red_flag'
+  code: string
+  quote: string
+  at: number | null
+  reviewed: boolean
+}
+export type ViolationPage = { total: number; items: ViolationItem[]; counts: Record<string, number> }
+export const getViolations = (
+  from: string,
+  to: string,
+  options: { userId?: string; code?: string; kind?: 'all' | 'violation' | 'red_flag'; offset?: number },
+) => {
+  const q = new URLSearchParams({ from, to, kind: options.kind ?? 'all', limit: '50' })
+  if (options.userId) q.set('user_id', options.userId)
+  if (options.code) q.set('code', options.code)
+  if (options.offset) q.set('offset', String(options.offset))
+  return api<ViolationPage>(`/ai/qa/violations?${q}`)
+}
+
+export type QueueItem = {
+  call_id: string
+  started_at: string
+  direction: 'in' | 'out'
+  talk_seconds: number | null
+  user_name: string | null
+  patient_id: string | null
+  patient_name: string | null
+  status: 'missing' | 'pending' | 'transcribing' | 'analyzing' | 'failed'
+  attempts: number
+  error: string | null
+  updated_at: string | null
+}
+export type QaQueue = { total: number; counts: Record<string, number>; items: QueueItem[] }
+export const getQaQueue = (from: string, to: string) => api<QaQueue>(`/ai/qa/queue?${period(from, to)}`)
+export const retryAnalyses = (callIds: string[]) =>
+  api<{ queued: number; skipped: number }>('/ai/qa/retry', { method: 'POST', body: { call_ids: callIds } })
+
 export const getBrief = (patientId: string, lang: 'uz' | 'ru') =>
   api<{ text: string; ai: boolean }>(`/ai/patients/${patientId}/brief?lang=${lang}`)
 
@@ -160,4 +240,12 @@ export function formatAt(seconds: number | null): string {
   if (seconds === null) return ''
   const s = Math.max(0, Math.floor(seconds))
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+/** Why an analysis was skipped or failed: the worker stores a code or a raw exception message. */
+export function errorKey(error: string): string {
+  if (error === 'too_short' || error === 'no_speech') return error
+  if (/budget/i.test(error)) return 'budget'
+  if (/OPENAI_API_KEY/.test(error)) return 'disabled'
+  return 'generic'
 }

@@ -96,6 +96,8 @@ class Settings(BaseSettings):
     repeat_visit_lead_days: int = 3  # call N days before the doctor's recommended date
     reactivation_after_days: int = 180  # TZ 4.5: default 6 months since the last visit
     reactivation_daily_limit: int = 20
+    # reports: a missed call counts as called back by an outbound call within N days (TZ 4.11)
+    missed_callback_window_days: int = 7
     # a message a worker took but never finished (crash mid-send) is marked failed after this;
     # not resent automatically: the provider may already have delivered it
     messages_sending_timeout_minutes: int = 10
