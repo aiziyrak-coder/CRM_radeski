@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import clinic_time
 from app.core.events import emit
 from app.core.text import phone_digits_query, search_key
+from app.modules.patients.constants import UNKNOWN_NAME
 from app.modules.patients.models import (
     MANUAL_CONDITION,
     Patient,
@@ -221,8 +222,13 @@ def _next_visit() -> Any:
     )
 
 
+def _by_name() -> Any:
+    # imported records without a name ("Ismi noma'lum", ~2 000) go after the named ones
+    return (Patient.full_name == UNKNOWN_NAME).asc(), Patient.full_name
+
+
 SORTS: dict[str, Callable[[], Any]] = {
-    "name": lambda: Patient.full_name,
+    "name": _by_name,
     "last_visit": lambda: Patient.last_visit_at.desc().nulls_last(),
     "next_visit": lambda: _next_visit().asc().nulls_last(),
     "created": lambda: Patient.created_at.desc(),
@@ -232,7 +238,7 @@ SORTS: dict[str, Callable[[], Any]] = {
 
 def _search_query(q: str | None, f: PatientFilters, sort: str | None = None) -> tuple[Select, Any]:
     stmt = select(Patient).where(_live())
-    order: Any = SORTS[sort]() if sort else Patient.full_name
+    order: Any = SORTS[sort]() if sort else _by_name()
     if f.kind:
         stmt = stmt.where(Patient.kind == f.kind)
     if f.category:
@@ -284,7 +290,8 @@ async def search(
     f = filters or PatientFilters(kind=kind, category=category)
     stmt, order = _search_query(q, f, sort)
     total = await session.scalar(select(func.count()).select_from(stmt.subquery()))
-    rows = await session.scalars(stmt.order_by(order, Patient.id).limit(limit).offset(offset))
+    order = order if isinstance(order, tuple) else (order,)
+    rows = await session.scalars(stmt.order_by(*order, Patient.id).limit(limit).offset(offset))
     return total or 0, list(rows)
 
 

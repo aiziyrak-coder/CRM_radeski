@@ -363,3 +363,25 @@ async def test_merge_rejects_tombstones_and_rechecks_under_lock(client: AsyncCli
         assert stale.merged_into_id is None
         locked, _ = await patients_service.lock_pair(s, stale.id, uuid.UUID(a["id"]))
         assert locked is stale and locked.merged_into_id == uuid.UUID(a["id"])
+
+
+async def test_nameless_imported_patients_are_listed_after_named_ones(
+    client: AsyncClient, op: dict
+) -> None:
+    from app.core.db import SessionLocal
+    from app.modules.patients.constants import UNKNOWN_NAME
+    from app.modules.patients.models import Patient, PatientKind
+
+    async with SessionLocal() as s:
+        s.add(Patient(full_name=UNKNOWN_NAME, search_key="ismi nomalum", kind=PatientKind.LEGACY))
+        s.add(
+            Patient(
+                full_name="Юсупова Нигора", search_key="yusupova nigora", kind=PatientKind.LEGACY
+            )
+        )
+        s.add(Patient(full_name="Azimov Bobur", search_key="azimov bobur", kind=PatientKind.LEGACY))
+        await s.commit()
+    names = [
+        p["full_name"] for p in (await client.get("/api/patients", headers=op)).json()["items"]
+    ]
+    assert names[-1] == UNKNOWN_NAME and names.index("Azimov Bobur") < names.index(UNKNOWN_NAME)

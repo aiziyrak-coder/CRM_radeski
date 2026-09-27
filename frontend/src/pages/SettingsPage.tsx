@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { useSearchParams } from 'react-router'
 import DoctorServicesEditor from '../components/DoctorServicesEditor'
 import ScriptsEditor from '../components/ScriptsEditor'
@@ -38,6 +39,10 @@ import {
   type Resource,
   type ServiceItem,
 } from '../lib/scheduling'
+
+/** Device types are codes chosen by the admin ("laser_epilation"); known ones get a name. */
+const deviceName = (t: TFunction, code: string) =>
+  t(`deviceTypes.${code}`, { defaultValue: code.replace(/_/g, ' ') })
 
 const SPECIALTIES: Specialty[] = [
   'dermatologist',
@@ -618,7 +623,7 @@ function ResourcesTab() {
                   >
                     <td className="py-2 font-medium">{r.name}</td>
                     <td className="py-2">{t(`settings.${r.kind}`)}</td>
-                    <td className="py-2 font-mono text-xs">{r.device_type ?? '—'}</td>
+                    <td className="py-2 text-xs">{r.device_type ? deviceName(t, r.device_type) : '—'}</td>
                     <td className="py-2">{branch(r.branch_id)}</td>
                     <td className="py-2 text-right whitespace-nowrap">
                       <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => setEditing(r.id)}>
@@ -677,7 +682,7 @@ function DevicePicker({
       {value && !known && <option value={value}>{value}</option>}
       {types.map((d) => (
         <option key={d.device_type} value={d.device_type}>
-          {d.device_type} ({t('servx.devices', { count: d.resources })})
+          {deviceName(t, d.device_type)} ({t('servx.devices', { count: d.resources })})
         </option>
       ))}
     </Select>
@@ -749,7 +754,7 @@ function ServiceRow({
           )}
         </td>
         <td className="py-2 pr-3 font-mono text-xs">
-          {s.device_type ?? '—'}
+          {s.device_type ? deviceName(t, s.device_type) : '—'}
           {noDevice && <div className="font-sans text-amber-800">{t('servx.noSuchDevice')}</div>}
         </td>
         <td className="py-2 pr-3 tabular-nums">{s.min_interval_days ?? '—'}</td>
@@ -995,7 +1000,7 @@ function ServicesTab() {
           <option value="">{t('servx.anyDevice')}</option>
           {deviceTypes.map((d) => (
             <option key={d.device_type} value={d.device_type}>
-              {d.device_type}
+              {deviceName(t, d.device_type)}
             </option>
           ))}
         </Select>

@@ -933,7 +933,11 @@
     "edit": "Tahrirlash"
   },
   "sched": {
-    "mode": { "today": "Bugun", "day": "Kun", "week": "Hafta" },
+    "mode": {
+      "today": "Bugun",
+      "day": "Kun",
+      "week": "Hafta"
+    },
     "resource": "Kabinet / apparat",
     "noRoom": "Biriktirilmagan",
     "noRooms": "Bu filialda kabinet yoki apparat kiritilmagan. Ularni \"Sozlamalar → Kabinet va apparatlar\" bo'limida qo'shing.",
@@ -991,7 +995,11 @@
     "changed_mind": "Fikridan qaytdi",
     "other": "Boshqa sabab"
   },
-  "absenceKinds": { "vacation": "Ta'til", "sick": "Kasallik", "other": "Boshqa" },
+  "absenceKinds": {
+    "vacation": "Ta'til",
+    "sick": "Kasallik",
+    "other": "Boshqa"
+  },
   "absence": {
     "none": "Rejalashtirilgan ta'til yoki kasallik yo'q",
     "hint": "Bu kunlarda shifokorga qabul yozilmaydi (bo'sh vaqt topuvchi ularni o'tkazib yuboradi)."
@@ -1023,7 +1031,11 @@
     "none": "Foydalanuvchi topilmadi"
   },
   "doctorx": {
-    "section": { "schedule": "Ish grafigi", "absences": "Ta'til / kasallik", "services": "Xizmatlar" },
+    "section": {
+      "schedule": "Ish grafigi",
+      "absences": "Ta'til / kasallik",
+      "services": "Xizmatlar"
+    },
     "linkHint": "Shifokor \"Bugungi bemorlarim\" sahifasini shu login bilan ko'radi",
     "userInactive": "Bu login o'chirilgan",
     "active": "Faol (jadvalda va yozuvda ko'rinadi)",
@@ -1071,8 +1083,15 @@
     "last": "Oxirgi sinxronlash",
     "lastOk": "oxirgi muvaffaqiyatli",
     "daily": "Filiallar, shifokorlar, xizmatlar va narxlar har kuni avtomatik yangilanadi.",
-    "status": { "ok": "muvaffaqiyatli", "aborted": "to'xtatildi", "failed": "xato" },
-    "trigger": { "manual": "qo'lda", "auto": "avtomatik" },
+    "status": {
+      "ok": "muvaffaqiyatli",
+      "aborted": "to'xtatildi",
+      "failed": "xato"
+    },
+    "trigger": {
+      "manual": "qo'lda",
+      "auto": "avtomatik"
+    },
     "counts": {
       "branches_created_one": "{{count}} yangi filial",
       "branches_created_other": "{{count}} yangi filial",
@@ -2028,5 +2047,12 @@
     "title": "Xabar shablonlari",
     "hint": "Avtomatik xabarlar (yozuv tasdig'i, eslatma, bog'lana olmadik) va operator uchun tayyor matnlar. SMS matni provayderda moderatsiyadan o'tgan matn bilan so'zma-so'z bir xil bo'lishi kerak. {sana}, {vaqt}, {shifokor}, {manzil}, {telefon}, {tayyorgarlik} — avtomatik to'ldiriladi.",
     "chars": "{{n}} belgi"
+  },
+  "deviceTypes": {
+    "laser_epilation": "Lazer epilyatsiya",
+    "co2_laser": "CO₂ lazer",
+    "excimer": "Excimer lazer",
+    "morpheus8": "Morpheus 8",
+    "ipl": "IPL"
   }
 }
