@@ -15,7 +15,8 @@ WORKDIR /app
 
 # Install dependencies only; the project itself runs from /app via PYTHONPATH
 COPY pyproject.toml ./
-RUN mkdir app && touch app/__init__.py \
+RUN pip install --upgrade "pip>=26.2" \
+    && mkdir app && touch app/__init__.py \
     && pip install ".[dev]" \
     && pip uninstall -y radeski-crm \
     && rm -rf app build ./*.egg-info
