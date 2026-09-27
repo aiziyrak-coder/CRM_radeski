@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, Timestamps, UUIDPk, str_enum
@@ -23,12 +23,17 @@ class LeadStage(enum.StrEnum):
     NEW = "new"
     CONTACTED = "contacted"
     BOOKED = "booked"
+    CONFIRMED = "confirmed"  # the booked visit was confirmed (by phone or at the desk)
     VISITED = "visited"
     LATER = "later"
     LOST = "lost"
 
 
 OPEN_STAGES = (LeadStage.NEW, LeadStage.CONTACTED, LeadStage.LATER)
+# TZ 4.4 funnel: new -> contacted -> booked -> confirmed -> visited (lost / later are side exits)
+FUNNEL = (
+    LeadStage.NEW, LeadStage.CONTACTED, LeadStage.BOOKED, LeadStage.CONFIRMED, LeadStage.VISITED,
+)  # fmt: skip
 
 
 class Lead(UUIDPk, Timestamps, Base):
@@ -56,4 +61,21 @@ class Lead(UUIDPk, Timestamps, Base):
     external_id: Mapped[str | None] = mapped_column(String(100), unique=True)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+
+class LeadStageChange(UUIDPk, Base):
+    """Stage history of an inquiry (who moved it, when and why) for the lead drawer."""
+
+    __tablename__ = "lead_stage_changes"
+
+    lead_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("leads.id", ondelete="CASCADE"), index=True
+    )
+    old_stage: Mapped[LeadStage | None] = mapped_column(str_enum(LeadStage, 10))
+    new_stage: Mapped[LeadStage] = mapped_column(str_enum(LeadStage, 10))
+    reason: Mapped[str | None] = mapped_column(String(50))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
     )

@@ -205,17 +205,61 @@ async def record_result(
     return task
 
 
+# --- supervisor actions (TZ 4.5: the call-center lead redistributes the queue) ---------------
+
+
+async def _lock_open(session: AsyncSession, task: Task) -> None:
+    await session.refresh(task, with_for_update=True)
+    if task.status is not TaskStatus.OPEN:
+        raise TaskError("task_closed")
+
+
+async def reschedule(
+    session: AsyncSession, task: Task, due_at: datetime, *, user_id: uuid.UUID
+) -> None:
+    """Moves an open task to another time (it leaves / joins today's queue accordingly)."""
+    await _lock_open(session, task)
+    old = task.due_at
+    task.due_at = due_at
+    await session.flush()
+    await emit(session, "task.rescheduled", task=task, old=old, user_id=user_id)
+
+
+async def set_priority(
+    session: AsyncSession, task: Task, priority: int, *, user_id: uuid.UUID
+) -> None:
+    await _lock_open(session, task)
+    old = task.priority
+    task.priority = priority
+    await session.flush()
+    await emit(session, "task.priority_changed", task=task, old=old, user_id=user_id)
+
+
+async def cancel(session: AsyncSession, task: Task, *, reason: str, user_id: uuid.UUID) -> None:
+    """Takes a task off the queue without a call (e.g. duplicate, patient already handled)."""
+    await _lock_open(session, task)
+    task.status = TaskStatus.CANCELLED
+    task.cancel_reason = reason
+    task.completed_at = clinic_time.now()
+    task.completed_by = user_id
+    await session.flush()
+    await emit(session, "task.cancelled", task=task, reason=reason, user_id=user_id)
+
+
 async def queue(
     session: AsyncSession,
     *,
     until: datetime,
     types: list[TaskType] | None = None,
+    campaign_id: uuid.UUID | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[Task]:
     stmt = select(Task).where(Task.status == TaskStatus.OPEN, Task.due_at <= until)
     if types:
         stmt = stmt.where(Task.type.in_(types))
+    if campaign_id:
+        stmt = stmt.where(Task.campaign_id == campaign_id)
     stmt = stmt.order_by(Task.priority, Task.due_at).limit(limit).offset(offset)
     return list(await session.scalars(stmt))
 

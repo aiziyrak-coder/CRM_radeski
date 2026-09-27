@@ -177,9 +177,18 @@ async def _on_status(session: AsyncSession, p: dict[str, Any]) -> None:
             session, TaskType.NO_SHOW, due_at=clinic_time.now(), patient_id=appt.patient_id,
             appointment_id=appt.id, dedupe_key=f"noshow:{appt.id}",
         )  # fmt: skip
-    if new is S.ARRIVED:
+    # the inquiry follows its visit down the funnel (TZ 4.4: booked -> confirmed -> visited)
+    if new is S.CONFIRMED:
         for lead in await session.scalars(
             select(Lead).where(Lead.patient_id == appt.patient_id, Lead.stage == LeadStage.BOOKED)
+        ):
+            await leads.change_stage(session, lead, LeadStage.CONFIRMED)
+    if new in (S.ARRIVED, S.COMPLETED):
+        for lead in await session.scalars(
+            select(Lead).where(
+                Lead.patient_id == appt.patient_id,
+                Lead.stage.in_((LeadStage.BOOKED, LeadStage.CONFIRMED)),
+            )
         ):
             await leads.change_stage(session, lead, LeadStage.VISITED)
     if new is S.COMPLETED:
@@ -313,7 +322,7 @@ async def _on_call(session: AsyncSession, p: dict[str, Any]) -> None:
         for lead in await session.scalars(
             select(Lead).where(or_(*match), Lead.stage.in_(OPEN_STAGES))
         ):
-            leads.mark_contacted(lead)
+            leads.mark_contacted(lead, call.user_id)
             if not call.patient_id:
                 await tasks.close_open(
                     session, types=(TaskType.MISSED_CALL, TaskType.NEW_LEAD), lead_id=lead.id,
@@ -383,7 +392,7 @@ async def _on_task_result(session: AsyncSession, p: dict[str, Any]) -> None:
         lead = await session.get(Lead, task.lead_id)
         if lead:
             if outcome not in (Outcome.NO_ANSWER, Outcome.WRONG_NUMBER):
-                leads.mark_contacted(lead)
+                leads.mark_contacted(lead, p.get("user_id"))
             if outcome in (Outcome.REFUSED, Outcome.WRONG_NUMBER, Outcome.DO_NOT_CALL):
                 reason = p.get("reason")
                 await leads.change_stage(

@@ -89,7 +89,14 @@ class Patient(UUIDPk, Timestamps, Base):
             postgresql_using="gin",
             postgresql_ops={"search_key": "gin_trgm_ops"},
         ),
+        # tag filter on the patients page (e.g. the "tekshirish-kerak" data-quality list)
+        Index("ix_patients_tags", "tags", postgresql_using="gin"),
     )
+
+    @property
+    def categories(self) -> list[str]:
+        """Diagnosis categories of the patient (TZ 4.8.4), from any source."""
+        return sorted({c.category_code for c in self.conditions if c.category_code})
 
 
 class PatientPhone(UUIDPk, Base):
@@ -119,6 +126,11 @@ class PatientPhone(UUIDPk, Base):
             postgresql_ops={"number": "gin_trgm_ops"},
         ),
     )
+
+
+# PatientCondition.source of a category set by staff on the card (not from an import): the
+# diagnosis mapping never overwrites these
+MANUAL_CONDITION = "manual"
 
 
 class PatientCondition(UUIDPk, Base):

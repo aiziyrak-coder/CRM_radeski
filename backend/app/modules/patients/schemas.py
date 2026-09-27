@@ -140,6 +140,10 @@ class PatientOut(_PrimaryPhoneFirst):
     created_at: datetime
     phones: list[PhoneOut]
     conditions: list[ConditionOut]
+    categories: list[str] = Field(default_factory=list)
+    # TZ 4.1: when and through which channel the person first reached the clinic (the card)
+    first_contact_at: datetime | None = None
+    first_contact_channel: str | None = None
 
 
 class PatientListItem(_PrimaryPhoneFirst):
@@ -148,17 +152,34 @@ class PatientListItem(_PrimaryPhoneFirst):
     id: uuid.UUID
     full_name: str
     birth_date: date | None
+    gender: Gender = Gender.UNKNOWN
     district: str | None
     kind: PatientKind
+    source: Source | None = None
     do_not_call: bool
     tags: list[str]
+    categories: list[str] = Field(default_factory=list)
     last_visit_at: datetime | None
+    # the nearest booked (scheduled / confirmed) visit; filled by the patients list only
+    next_visit_at: datetime | None = None
     phones: list[PhoneOut]
 
 
 class PatientPage(BaseModel):
     total: int
     items: list[PatientListItem]
+
+
+PatientSort = Literal["name", "last_visit", "next_visit", "created", "birth_date"]
+
+
+class CategoryIn(BaseModel):
+    code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
+
+
+class TagCount(BaseModel):
+    tag: str
+    count: int
 
 
 class DuplicateCheckIn(BaseModel):

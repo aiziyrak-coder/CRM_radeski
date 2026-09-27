@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.modules.diagnoses.categories import CATEGORY_BY_CODE, normalize_text, suggest_category
 from app.modules.diagnoses.models import DiagnosisMapping, MappingMethod, MappingStatus
-from app.modules.patients.models import Patient, PatientCondition
+from app.modules.patients.models import MANUAL_CONDITION, Patient, PatientCondition
 
 
 class UnknownCategoryError(ValueError):
@@ -84,7 +84,12 @@ async def apply(session: AsyncSession, texts: list[str] | None = None) -> None:
         )
         .scalar_subquery()
     )
-    stmt = update(PatientCondition).values(category_code=approved)
+    # categories staff set on the patient card have no source text: the mapping leaves them alone
+    stmt = (
+        update(PatientCondition)
+        .values(category_code=approved)
+        .where(PatientCondition.source != MANUAL_CONDITION)
+    )
     if texts is not None:
         stmt = stmt.where(PatientCondition.text_key.in_(texts))
     await session.execute(stmt.execution_options(synchronize_session=False))

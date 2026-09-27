@@ -47,6 +47,11 @@ class Event(BaseModel):
     ref: uuid.UUID | None = None  # phone: the call id (recording)
     user_id: uuid.UUID | None = None  # phone: the operator (may play their own recordings)
     seconds: int | None = None  # phone: talk time
+    # what a click on the item opens: the appointment panel, the call's AI analysis, the lead
+    appointment_id: uuid.UUID | None = None
+    call_id: uuid.UUID | None = None
+    has_analysis: bool = False
+    lead_id: uuid.UUID | None = None
 
 
 @router.get("/{patient_id}/timeline")
@@ -143,6 +148,7 @@ async def timeline(
                 )
                 or None,
                 reason=a.cancel_reason,
+                appointment_id=a.id,
             )
         )
     for r in recs:
@@ -174,6 +180,7 @@ async def timeline(
                 title=lead.channel.value,
                 detail=lead.interest,
                 reason=lead.lost_reason,
+                lead_id=lead.id,
             )
         )
 
@@ -230,6 +237,8 @@ async def timeline(
                     user_id=call.user_id,
                     ref=call.id if call.recording_status is RecordingStatus.READY else None,
                     seconds=call.talk_seconds,
+                    call_id=call.id,
+                    has_analysis=summary is not None,
                 )
             )
 

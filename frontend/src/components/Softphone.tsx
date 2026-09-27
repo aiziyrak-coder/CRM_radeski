@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import { useAuth } from '../lib/auth-context'
 import { createLead, fillScript, getScripts, leadPatient } from '../lib/ops'
-import { UNKNOWN_NAME, formatDateTime, formatPhone, getPatient } from '../lib/patients'
+import { SOURCES, UNKNOWN_NAME, formatDateTime, formatPhone, getPatient, type Source } from '../lib/patients'
 import { useSoftphone, type PhoneStatus } from '../lib/softphone-context'
 import { formatDuration, lookupCaller } from '../lib/telephony'
 import BookingDialog from './BookingDialog'
@@ -105,8 +105,10 @@ function Caller({ number }: { number: string }) {
     queryFn: () => lookupCaller(number),
     enabled: number.replace(/\D/g, '').length >= 9,
   })
+  // TZ 4.4: the ad source is mandatory for an inquiry entered by staff
+  const [source, setSource] = useState<Source | ''>('')
   const newLead = useMutation({
-    mutationFn: () => createLead({ phone: number, channel: 'call' }),
+    mutationFn: () => createLead({ phone: number, channel: 'call', source: source || null }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['telephony', 'lookup', number] })
       void queryClient.invalidateQueries({ queryKey: ['tasks'] })
@@ -150,10 +152,13 @@ function Caller({ number }: { number: string }) {
     <div className="text-sm">
       <div className="flex items-center gap-2">
         <span className="text-slate-600">{t('phone.unknownCaller')}</span>
+      </div>
+      <div className="mt-1 flex items-center gap-2">
+        <SourcePick value={source} onChange={setSource} />
         <Button
           variant="secondary"
           className="px-2 py-1 text-xs"
-          disabled={newLead.isPending}
+          disabled={newLead.isPending || !source}
           onClick={() => newLead.mutate()}
         >
           {t('phone.newLead')}
@@ -161,6 +166,25 @@ function Caller({ number }: { number: string }) {
       </div>
       <ErrorText error={newLead.error} />
     </div>
+  )
+}
+
+function SourcePick({ value, onChange }: { value: Source | ''; onChange: (s: Source | '') => void }) {
+  const { t } = useTranslation()
+  return (
+    <Select
+      value={value}
+      onChange={(e) => onChange(e.target.value as Source | '')}
+      className="min-w-0 flex-1 py-1 text-xs"
+      aria-label={t('leadsView.adSource')}
+    >
+      <option value="">{t('leadsView.pickSource')}</option>
+      {SOURCES.map((s) => (
+        <option key={s} value={s}>
+          {t(`sources.${s}`)}
+        </option>
+      ))}
+    </Select>
   )
 }
 
@@ -183,6 +207,7 @@ function CallAssistant({
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [code, setCode] = useState('')
+  const [source, setSource] = useState<Source | ''>('')
   const lang = i18n.language === 'ru' ? 'ru' : 'uz'
   const { data: scripts = [] } = useQuery({
     queryKey: ['scripts'],
@@ -198,7 +223,8 @@ function CallAssistant({
     mutationFn: async () => {
       if (caller?.patient) return caller.patient.id
       if (createdPatientId) return createdPatientId
-      const lead = caller?.lead ?? (await createLead({ phone: number, channel: 'call' }))
+      const lead =
+        caller?.lead ?? (await createLead({ phone: number, channel: 'call', source: source || null }))
       const { patient_id } = await leadPatient(lead.id)
       onCreated(patient_id)
       void queryClient.invalidateQueries({ queryKey: ['telephony', 'lookup', number] })
@@ -208,6 +234,8 @@ function CallAssistant({
     },
     onSuccess: onBook,
   })
+  // booking an unknown caller creates their inquiry first, which needs its ad source
+  const needsSource = !caller?.patient && !caller?.lead && !createdPatientId
   const callerName = caller?.patient?.full_name
   const patientName = callerName === UNKNOWN_NAME ? t('patients.tagNoName') : callerName
   const script = scripts.find((s) => s.code === code && s.language === lang)
@@ -231,12 +259,13 @@ function CallAssistant({
         <Button
           variant="secondary"
           className="px-2 py-1 text-xs"
-          disabled={book.isPending}
+          disabled={book.isPending || (needsSource && !source)}
           onClick={() => book.mutate()}
         >
           {t('tasks.book')}
         </Button>
       </div>
+      {needsSource && <SourcePick value={source} onChange={setSource} />}
       {script && (
         <div className="max-h-56 overflow-y-auto rounded-md bg-slate-50 p-2">
           <ScriptBody
