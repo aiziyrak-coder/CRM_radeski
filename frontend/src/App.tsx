@@ -2,7 +2,7 @@ import { lazy, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router'
 import Layout from './components/Layout'
 import { useAuth } from './lib/auth-context'
-import { NAV_ITEMS, type NavItem } from './lib/navigation'
+import { NAV_ITEMS, landingFor, type NavItem } from './lib/navigation'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import SoonPage from './pages/SoonPage'
@@ -59,7 +59,8 @@ function RequireAuth({ children }: { children: ReactNode }) {
 
 function Guarded({ item, children }: { item: NavItem; children?: ReactNode }) {
   const { user } = useAuth()
-  if (!user || !item.roles.includes(user.role)) return <Navigate to="/" replace />
+  if (!user) return <Navigate to="/" replace />
+  if (!item.roles.includes(user.role)) return <Navigate to={landingFor(user.role)} replace />
   return children ?? PAGES[item.path] ?? <SoonPage labelKey={item.labelKey} />
 }
 

@@ -48,6 +48,12 @@ class RecommendationStatus(enum.StrEnum):
     DISMISSED = "dismissed"
 
 
+class AbsenceKind(enum.StrEnum):
+    VACATION = "vacation"
+    SICK = "sick"
+    OTHER = "other"
+
+
 class DoctorSchedule(UUIDPk, Base):
     """Weekly working hours of a doctor at a branch (several rows per day = split shifts)."""
 
@@ -75,6 +81,9 @@ class DoctorAbsence(UUIDPk, Base):
     )
     date_from: Mapped[date] = mapped_column(Date)
     date_to: Mapped[date] = mapped_column(Date)
+    kind: Mapped[AbsenceKind] = mapped_column(
+        str_enum(AbsenceKind, 10), default=AbsenceKind.OTHER, server_default="other"
+    )
     reason: Mapped[str | None] = mapped_column(String(255))
 
 

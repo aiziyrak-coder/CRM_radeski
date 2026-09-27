@@ -3,6 +3,7 @@
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, update
@@ -30,6 +31,7 @@ from app.modules.scheduling.models import (
     DoctorAbsence,
     DoctorSchedule,
     Recommendation,
+    RecommendationStatus,
 )
 from app.modules.users.models import Role, User
 
@@ -430,7 +432,7 @@ async def change_status(
     old = appointment.status
     if new not in TRANSITIONS[old]:
         raise SchedulingError("invalid_transition")
-    if new is AppointmentStatus.CANCELLED and not reason:
+    if new in (S.CANCELLED, S.NO_SHOW) and not (reason and reason.strip()):
         raise SchedulingError("reason_required")
     if new in (AppointmentStatus.ARRIVED, AppointmentStatus.COMPLETED):
         patient = await session.get(Patient, appointment.patient_id)
@@ -439,8 +441,9 @@ async def change_status(
             if not patient.last_visit_at or patient.last_visit_at < appointment.starts_at:
                 patient.last_visit_at = appointment.starts_at
     appointment.status = new
+    # back from "no-show" (came late / marked by mistake): the no-show reason no longer applies
     appointment.cancel_reason = (
-        reason if new in (S.CANCELLED, S.NO_SHOW) else appointment.cancel_reason
+        reason.strip() if reason and new in (S.CANCELLED, S.NO_SHOW) else None
     )
     appointment.status_changed_at = datetime.now(UTC)
     try:
@@ -535,6 +538,85 @@ async def day_appointments(
     if not include_inactive:
         stmt = stmt.where(Appointment.status.in_(ACTIVE_STATUSES))
     return list(await session.scalars(stmt.order_by(Appointment.starts_at)))
+
+
+async def assign_resource(
+    session: AsyncSession, appointment: Appointment, resource_id: uuid.UUID | None
+) -> None:
+    """Puts a booked visit into a room or onto a device (the registrar's "resource" columns).
+
+    A visit whose services need a device can only move to another device of that type."""
+    if appointment.status not in (S.SCHEDULED, S.CONFIRMED, S.ARRIVED):
+        raise SchedulingError("invalid_transition")
+    services = list(
+        await session.scalars(
+            select(Service).where(Service.id.in_([s.service_id for s in appointment.services]))
+        )
+    )
+    device = required_device(services)
+    if resource_id is None:
+        if device:
+            raise SchedulingError("device_required")
+        appointment.resource_id = None
+        await session.flush()
+        return
+    resource = await session.get(Resource, resource_id)
+    if resource is None or not resource.is_active or resource.branch_id != appointment.branch_id:
+        raise SchedulingError("resource_not_found")
+    if device and (resource.kind is not ResourceKind.DEVICE or resource.device_type != device):
+        raise SchedulingError("wrong_device")
+    appointment.resource_id = resource.id
+    try:
+        async with session.begin_nested():
+            await session.flush()
+    except IntegrityError:
+        raise SchedulingError("resource_busy") from None
+
+
+async def range_appointments(
+    session: AsyncSession,
+    date_from: date,
+    days: int,
+    branch_id: uuid.UUID | None = None,
+    doctor_id: uuid.UUID | None = None,
+) -> list[Appointment]:
+    start, _ = local_day_bounds(date_from)
+    end = start + timedelta(days=days)
+    stmt = select(Appointment).where(Appointment.starts_at >= start, Appointment.starts_at < end)
+    if branch_id:
+        stmt = stmt.where(Appointment.branch_id == branch_id)
+    if doctor_id:
+        stmt = stmt.where(Appointment.doctor_id == doctor_id)
+    return list(await session.scalars(stmt.order_by(Appointment.starts_at)))
+
+
+# --- recommendations ---------------------------------------------------------------------------
+
+
+async def update_recommendation(
+    session: AsyncSession,
+    rec: Recommendation,
+    *,
+    changes: dict[str, Any],
+) -> None:
+    """Edits an open "come back in N weeks" (its call task follows the new date)."""
+    if rec.status is not RecommendationStatus.OPEN:
+        raise SchedulingError("recommendation_closed")
+    if changes.get("service_id") and await session.get(Service, changes["service_id"]) is None:
+        raise SchedulingError("service_not_found")
+    for field, value in changes.items():
+        setattr(rec, field, value)
+    await session.flush()
+    await emit(session, "recommendation.changed", recommendation=rec)
+
+
+async def dismiss_recommendation(session: AsyncSession, rec: Recommendation) -> None:
+    """The doctor withdraws a recommendation: nobody should call the patient about it."""
+    if rec.status is not RecommendationStatus.OPEN:
+        raise SchedulingError("recommendation_closed")
+    rec.status = RecommendationStatus.DISMISSED
+    await session.flush()
+    await emit(session, "recommendation.changed", recommendation=rec)
 
 
 async def _merge_patients(session: AsyncSession, target: uuid.UUID, source: uuid.UUID) -> None:

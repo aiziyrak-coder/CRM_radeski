@@ -1,24 +1,99 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ApiError } from '../lib/api'
 import { useAuth } from '../lib/auth-context'
-import { SOURCES, type PatientListItem, type Source } from '../lib/patients'
+import {
+  SOURCES,
+  createPatient,
+  type DuplicateCandidate,
+  type PatientInput,
+  type PatientListItem,
+  type Source,
+} from '../lib/patients'
 import {
   book,
   clinicDate,
+  clinicMinutes,
   clinicTime,
+  defaultBranchId,
   findSlots,
   formatDay,
   getBranches,
   getDoctors,
+  minToHhmm,
   rescheduleAppointment,
   toClinicIso,
   type Appointment,
   type ServiceItem,
   type Slot,
 } from '../lib/scheduling'
+import PatientForm from './PatientForm'
+import PatientName from './PatientName'
 import { PatientPicker, ServicePicker } from './Pickers'
 import { Button, ErrorText, Field, Input, Modal, Notice, Select } from './ui'
+
+/** now, rounded down to a quarter hour (clinic time): the default start of a walk-in */
+const nowQuarter = () => minToHhmm(Math.floor(clinicMinutes(new Date().toISOString()) / 15) * 15)
+
+/** Registers a patient who isn't in the CRM yet (walk-in) without leaving the booking. */
+function NewPatientInline({
+  onCreated,
+  onCancel,
+}: {
+  onCreated: (p: PatientListItem) => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  const [pending, setPending] = useState<PatientInput | null>(null)
+  const create = useMutation({
+    mutationFn: ({ data, force }: { data: PatientInput; force: boolean }) => createPatient(data, force),
+    onSuccess: onCreated,
+  })
+  const dupes =
+    create.error instanceof ApiError && create.error.code === 'possible_duplicates'
+      ? (create.error.data.candidates as DuplicateCandidate[])
+      : null
+  return (
+    <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+      <PatientForm
+        withPhone
+        busy={create.isPending}
+        error={dupes ? null : create.error}
+        onSubmit={(data) => {
+          setPending(data)
+          create.mutate({ data, force: false })
+        }}
+        onCancel={onCancel}
+      />
+      {dupes && pending && (
+        <div className="space-y-2 text-sm">
+          <p className="font-medium text-amber-900">{t('sched.maybeExisting')}</p>
+          <ul className="divide-y divide-slate-200 rounded-md border border-slate-200 bg-white">
+            {dupes.map((p) => (
+              <li key={p.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                <span>
+                  <PatientName name={p.full_name} />{' '}
+                  <span className="text-xs text-slate-500">{p.phones[0]?.display}</span>
+                </span>
+                <Button variant="secondary" className="px-2 py-1 text-xs" onClick={() => onCreated(p)}>
+                  {t('sched.pickThis')}
+                </Button>
+              </li>
+            ))}
+          </ul>
+          <Button
+            variant="ghost"
+            disabled={create.isPending}
+            onClick={() => create.mutate({ data: pending, force: true })}
+          >
+            {t('sched.createAnyway')}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 type Props = {
   onClose: () => void
@@ -30,6 +105,8 @@ type Props = {
   at?: { date: string; time: string }
   /** reschedule mode: services/patient come from the appointment */
   reschedule?: Appointment
+  /** registrar's walk-in ("joyida yozuv"): today, now, an exact time, new patients allowed */
+  walkIn?: boolean
 }
 
 const OVERRIDE_ROLES = ['registrar', 'supervisor', 'admin']
@@ -42,6 +119,7 @@ export default function BookingDialog({
   doctorId,
   at,
   reschedule,
+  walkIn,
 }: Props) {
   const { t, i18n } = useTranslation()
   const { user } = useAuth()
@@ -64,15 +142,18 @@ export default function BookingDialog({
   const [doctor, setDoctor] = useState(doctorId ?? reschedule?.doctor_id ?? '')
   const [part, setPart] = useState('')
   const [dateFrom, setDateFrom] = useState(at?.date ?? clinicDate())
-  const [manual, setManual] = useState(Boolean(at))
-  const [time, setTime] = useState(at?.time ?? '09:00')
-  const [outside, setOutside] = useState(false)
+  const [manual, setManual] = useState(Boolean(at) || Boolean(walkIn))
+  const [time, setTime] = useState(at?.time ?? (walkIn ? nowQuarter() : '09:00'))
+  const canOverride = Boolean(user && OVERRIDE_ROLES.includes(user.role))
+  // a walk-in is squeezed in now, even outside the doctor's hours
+  const [outside, setOutside] = useState(Boolean(walkIn) && canOverride)
   const [source, setSource] = useState<Source | ''>('')
   const [note, setNote] = useState('')
   const [limit, setLimit] = useState(3)
   const [chosen, setChosen] = useState<Slot | null>(null)
+  const [creatingPatient, setCreatingPatient] = useState(false)
 
-  const effectiveBranch = branch || branches.find((b) => b.is_main)?.id || branches[0]?.id || ''
+  const effectiveBranch = branch || defaultBranchId(branches, user?.branch_id)
   const serviceIds = reschedule ? reschedule.services.map((s) => s.service_id) : services.map((s) => s.id)
   const patientId = reschedule?.patient_id ?? patient?.id
 
@@ -149,7 +230,11 @@ export default function BookingDialog({
   }
 
   return (
-    <Modal title={t(reschedule ? 'booking.rescheduleTitle' : 'booking.title')} onClose={onClose} wide>
+    <Modal
+      title={t(reschedule ? 'booking.rescheduleTitle' : walkIn ? 'sched.walkIn' : 'booking.title')}
+      onClose={onClose}
+      wide
+    >
       <div className="space-y-4">
         {reschedule ? (
           <p className="text-sm">
@@ -159,8 +244,27 @@ export default function BookingDialog({
         ) : (
           <>
             <Field label={t('booking.patient')}>
-              <PatientPicker value={patient} onChange={refilter(setPatient)} />
+              {creatingPatient ? (
+                <NewPatientInline
+                  onCreated={(p) => {
+                    refilter(setPatient)(p)
+                    setCreatingPatient(false)
+                  }}
+                  onCancel={() => setCreatingPatient(false)}
+                />
+              ) : (
+                <PatientPicker value={patient} onChange={refilter(setPatient)} />
+              )}
             </Field>
+            {!patient && !creatingPatient && (
+              <Button
+                variant="ghost"
+                className="-mt-2 px-2 py-1 text-sm"
+                onClick={() => setCreatingPatient(true)}
+              >
+                + {t('sched.newPatient')}
+              </Button>
+            )}
             <Field label={t('booking.services')}>
               <ServicePicker value={services} onChange={refilter(setServices)} />
             </Field>
@@ -221,7 +325,7 @@ export default function BookingDialog({
           <input type="checkbox" checked={manual} onChange={(e) => setManual(e.target.checked)} />
           {t('booking.manual')}
         </label>
-        {manual && user && OVERRIDE_ROLES.includes(user.role) && !reschedule && (
+        {manual && canOverride && !reschedule && (
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={outside} onChange={(e) => setOutside(e.target.checked)} />
             {t('booking.outside')}
