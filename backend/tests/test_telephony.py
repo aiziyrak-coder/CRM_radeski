@@ -439,6 +439,7 @@ def test_ivr_prompt_texts_follow_the_clinic_hours() -> None:
     assert all(u.strip() and r.strip() for u, r in texts.values())
 
 
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
 def test_ivr_prompt_is_converted_for_asterisk(tmp_path: Path) -> None:
     import subprocess
     import wave
