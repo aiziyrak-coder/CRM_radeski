@@ -2067,5 +2067,21 @@
     "placeholder": "Bemorni qidirish: ism yoki telefon",
     "none": "Hech kim topilmadi",
     "hint": "Ism kirill yoki lotinda, telefonning istalgan qismi. \"/\" — qidiruvga o'tish"
+  },
+  "time": {
+    "todayAt": "bugun {{time}}",
+    "tomorrowAt": "ertaga {{time}}",
+    "yesterdayAt": "kecha {{time}}",
+    "daysAgo_one": "{{count}} kun oldin",
+    "daysAgo_other": "{{count}} kun oldin",
+    "inDays_one": "{{count}} kundan keyin",
+    "inDays_other": "{{count}} kundan keyin",
+    "minutes_one": "{{count}} daq",
+    "minutes_other": "{{count}} daq",
+    "hours_one": "{{count}} soat",
+    "hours_other": "{{count}} soat",
+    "hoursMinutes": "{{h}} soat {{m}} daq",
+    "days_one": "{{count}} kun",
+    "days_other": "{{count}} kun"
   }
 }

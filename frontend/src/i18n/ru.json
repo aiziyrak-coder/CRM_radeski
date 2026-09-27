@@ -2155,5 +2155,31 @@
     "placeholder": "Поиск пациента: имя или телефон",
     "none": "Никого не найдено",
     "hint": "Имя кириллицей или латиницей, любая часть телефона. «/» — перейти к поиску"
+  },
+  "time": {
+    "todayAt": "сегодня {{time}}",
+    "tomorrowAt": "завтра {{time}}",
+    "yesterdayAt": "вчера {{time}}",
+    "daysAgo_one": "{{count}} день назад",
+    "daysAgo_few": "{{count}} дня назад",
+    "daysAgo_many": "{{count}} дней назад",
+    "daysAgo_other": "{{count}} дня назад",
+    "inDays_one": "через {{count}} день",
+    "inDays_few": "через {{count}} дня",
+    "inDays_many": "через {{count}} дней",
+    "inDays_other": "через {{count}} дня",
+    "minutes_one": "{{count}} мин",
+    "minutes_few": "{{count}} мин",
+    "minutes_many": "{{count}} мин",
+    "minutes_other": "{{count}} мин",
+    "hours_one": "{{count}} час",
+    "hours_few": "{{count}} часа",
+    "hours_many": "{{count}} часов",
+    "hours_other": "{{count}} часа",
+    "hoursMinutes": "{{h}} ч {{m}} мин",
+    "days_one": "{{count}} день",
+    "days_few": "{{count}} дня",
+    "days_many": "{{count}} дней",
+    "days_other": "{{count}} дня"
   }
 }
